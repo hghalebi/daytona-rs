@@ -50,6 +50,7 @@ async fn run() -> Result<(), ExampleError> {
             sandbox.run(script).execution_timeout(timeout).await
         })
         .readiness_timeout(WaitTimeout::seconds(120)?)
+        .cleanup_timeout(WaitTimeout::seconds(90)?)
         .await?;
 
     // The output owns its text. The sandbox has already been deleted.
