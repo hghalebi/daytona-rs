@@ -22,6 +22,9 @@
   both statuses. Cooperative timeout and combined failures are tested locally.
 - Fresh live checks passed Pi generation, independent artifact execution, download,
   and deletion readback; two bounded jobs and the broad SDK smoke test also passed.
+- A live packaged-example check found that custom resources require an image
+  source. Validation now rejects conflicting snapshot resources locally while
+  retaining the draft; the configured-scope lesson uses an Ubuntu image.
 - Corrected timeout explanations and validation diagnostics without rejecting
   valid multiline scripts. Rust 1.98.0 remains the minimum. No SonarCloud added.
 

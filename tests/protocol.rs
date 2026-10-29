@@ -851,7 +851,7 @@ async fn configured_scopes_preserve_intent_and_all_cleanup_outcomes() -> Result<
         let request = Create::draft()
             .ttl(SandboxTtl::minutes(10)?)
             .name(SandboxName::new("configured")?)
-            .source(SandboxSource::Snapshot(SnapshotRef::new("snapshot-a")?))
+            .source(SandboxSource::Image(ImageSpec::new("FROM ubuntu:24.04")?))
             .resources(Resources::new(
                 CpuAllocation::cores(2)?,
                 MemorySize::gigabytes(4)?,
@@ -866,7 +866,7 @@ async fn configured_scopes_preserve_intent_and_all_cleanup_outcomes() -> Result<
         create.contains = vec![serde_json::to_string(request.reference().operation())?];
         for field in [
             "\"name\":\"configured\"",
-            "\"snapshot\":\"snapshot-a\"",
+            "\"dockerfileContent\":\"FROM ubuntu:24.04\"",
             "\"cpu\":2",
             "\"memory\":4",
             "\"disk\":8",
@@ -1172,5 +1172,32 @@ async fn explicit_budget_does_not_bypass_client_cap() -> Result<(), TestError> {
         ),
         "budget cannot bypass outer cap",
     )?;
+    server.finish().await
+}
+
+#[tokio::test]
+async fn configured_snapshot_uses_its_existing_resources() -> Result<(), TestError> {
+    let server = Server::start(vec![
+        create_step().containing(vec!["\"snapshot\":\"snapshot-a\""]),
+        ready_step(),
+        execute_step(SUCCESS),
+        delete_step(200),
+        absent_step(),
+    ])
+    .await?;
+    let client = server.client()?;
+    let request = Create::draft()
+        .ttl(SandboxTtl::minutes(10)?)
+        .source(SandboxSource::Snapshot(SnapshotRef::new("snapshot-a")?))
+        .validate()?;
+    match client
+        .sandboxes()
+        .ephemeral_from(request)
+        .run(async |sandbox| shell(sandbox).await)
+        .await
+    {
+        Ok(output) => require(output.text() == "hello\n", "snapshot scope completed")?,
+        Err(_) => return Err(TestError::Contract("snapshot scoped cleanup")),
+    }
     server.finish().await
 }

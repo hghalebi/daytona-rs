@@ -1,7 +1,7 @@
 use daytona::{
     ApiKey, ConfigurationError, CpuAllocation, Create, CreateValidationError, Credentials, Daytona,
-    DiskSize, ExecutionError, ExecutionTimeout, MemorySize, NetworkPolicy, Resources, SandboxTtl,
-    ScopeError, ShellScript, ValidationError,
+    DiskSize, ExecutionError, ExecutionTimeout, ImageSpec, MemorySize, NetworkPolicy, Resources,
+    SandboxSource, SandboxTtl, ScopeError, ShellScript, ValidationError, WaitTimeout,
 };
 use std::io::Write;
 use thiserror::Error;
@@ -36,6 +36,7 @@ async fn run() -> Result<(), ExampleError> {
     // The scope owns the sandbox. Your callback borrows it until work ends.
     let request = Create::draft()
         .ttl(SandboxTtl::minutes(5)?)
+        .source(SandboxSource::Image(ImageSpec::new("FROM ubuntu:24.04")?))
         .network(NetworkPolicy::BlockAll)
         .resources(Resources::new(
             CpuAllocation::cores(1)?,
@@ -46,6 +47,7 @@ async fn run() -> Result<(), ExampleError> {
     let output = client
         .sandboxes()
         .ephemeral_from(request)
+        .readiness_timeout(WaitTimeout::seconds(120)?)
         .run(async move |sandbox| {
             sandbox
                 .shell(script)

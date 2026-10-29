@@ -211,3 +211,40 @@ fn command_budget_validates_every_ingress() -> Result<(), TestError> {
     }
     Ok(())
 }
+
+#[test]
+fn resource_source_validation_preserves_the_complete_draft() -> Result<(), TestError> {
+    for source in [
+        SandboxSource::Default,
+        SandboxSource::Snapshot(SnapshotRef::new("snapshot-a")?),
+    ] {
+        let draft = Create::draft()
+            .source(source)
+            .ttl(SandboxTtl::minutes(5)?)
+            .resources(Resources::new(
+                CpuAllocation::cores(1)?,
+                MemorySize::gigabytes(1)?,
+                DiskSize::gigabytes(3)?,
+            ));
+        let failure = draft.validate().err().ok_or(TestError::Contract(
+            "snapshot resource combination rejected",
+        ))?;
+        require(
+            failure.to_string().contains("SandboxSource::Image"),
+            "actionable creation diagnostic",
+        )?;
+        let (draft, violation) = failure.into_parts();
+        require(
+            matches!(violation, ValidationError::ResourcesRequireImage),
+            "specific local resource error",
+        )?;
+        let request = draft
+            .source(SandboxSource::Image(ImageSpec::new("FROM ubuntu:24.04")?))
+            .validate()?;
+        require(
+            request.specification().ttl().as_minutes() == 5,
+            "TTL preserved for correction",
+        )?;
+    }
+    Ok(())
+}

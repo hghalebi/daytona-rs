@@ -13,6 +13,11 @@ use thiserror::Error;
 /// Variants identify the violated rule without retaining the sensitive input.
 /// See [validated inputs](crate::guide::inputs).
 pub enum ValidationError {
+    /// Custom resource sizes require an image source, not a snapshot.
+    #[error(
+        "custom resources require SandboxSource::Image; snapshots keep their existing resources"
+    )]
+    ResourcesRequireImage,
     #[error("{field} is empty or contains characters not allowed for this value")]
     /// Text failed the constructor’s format rules.
     InvalidText {

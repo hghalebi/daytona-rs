@@ -95,7 +95,7 @@ impl fmt::Debug for CreateSpec {
     }
 }
 #[derive(Debug, thiserror::Error)]
-#[error("creation input failed validation")]
+#[error("creation input failed validation: {violation}")]
 /// A validation failure retaining the original draft for correction.
 ///
 /// Use [`Self::into_parts`] to recover ownership without cloning.
@@ -148,7 +148,7 @@ impl Create<Draft> {
         self.state.input.ttl = Some(ttl);
         self
     }
-    /// Sets the requested CPU, memory, and disk allocations.
+    /// Sets custom allocations for an image source. Snapshot sources retain their resources.
     pub fn resources(mut self, resources: Resources) -> Self {
         self.state.input.resources = Some(resources);
         self
@@ -178,8 +178,17 @@ impl Create<Draft> {
     /// See [lifecycle](crate::guide::lifecycle).
     ///
     /// # Errors
-    /// Returns [`CreateValidationError`] retaining the draft when its TTL is missing.
+    /// Returns [`CreateValidationError`] retaining the draft when its TTL is missing
+    /// or custom resources are combined with a default/explicit snapshot.
     pub fn validate(mut self) -> Result<Create<Validated>, CreateValidationError> {
+        if self.state.input.resources.is_some()
+            && !matches!(self.state.input.source, SandboxSource::Image(_))
+        {
+            return Err(CreateValidationError {
+                input: Box::new(self),
+                violation: ValidationError::ResourcesRequireImage,
+            });
+        }
         let ttl = match self.state.input.ttl.take() {
             Some(ttl) => ttl,
             None => {

@@ -40,3 +40,8 @@ The SDK reference wire format is unchanged.
 New convenience methods borrow retained output or move evidence intact:
 ExecutionError::output, CleanupError::into_parts, and Sandbox::into_id. Debug
 remains redacted. A local ID transfer does not stop or delete a remote sandbox.
+
+Creation validation now rejects resources with a default or named snapshot via
+ValidationError::ResourcesRequireImage. The retained draft can be corrected by
+selecting an image source. This prevents a provider rejection; snapshot sizes
+remain defined by the snapshot. Update exhaustive validation-error matches.

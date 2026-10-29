@@ -46,7 +46,9 @@ For self-hosted or regional deployments, construct both trusted base URLs with
 except for loopback HTTP. Credentials are sent to the explicitly configured
 API and toolbox endpoints. Redirects are disabled.
 
-Use [`Resources`](crate::Resources) for CPU, memory, and disk. Memory and disk use
+Use [`Resources`](crate::Resources) for CPU, memory, and disk with an image source.
+Default and named snapshots retain their own resources; validation rejects custom
+allocations with those sources. Memory and disk use
 provider GB fields. [`NetworkPolicy`](crate::NetworkPolicy) chooses provider
 behavior, blocking, or allow lists. Provider permissions and quotas remain runtime
 checks. See the constructors for exact accepted ranges.
