@@ -1054,3 +1054,88 @@ async fn deletion_poll_failure_retains_acknowledgement() -> Result<(), TestError
     )?;
     server.finish().await
 }
+
+#[tokio::test]
+async fn deletion_status_classification_preserves_recovery() -> Result<(), TestError> {
+    for status in [401, 403, 404, 429, 503] {
+        let server = Server::start(vec![delete_step(status)]).await?;
+        let client = server.client()?;
+        let result = client
+            .sandbox(SandboxId::new("sb-1")?)
+            .delete(WaitTimeout::seconds(1)?)
+            .await;
+        let valid = matches!(
+            (status, result),
+            (404, Ok(_))
+                | (
+                    401,
+                    Err(CleanupError::Unconfirmed {
+                        acceptance: DeleteAcceptance::Rejected,
+                        cause: OperationError::Rejected(ProviderRejection::Authentication(_)),
+                        ..
+                    }),
+                )
+                | (
+                    403,
+                    Err(CleanupError::Unconfirmed {
+                        acceptance: DeleteAcceptance::Rejected,
+                        cause: OperationError::Rejected(ProviderRejection::Authorization(_)),
+                        ..
+                    }),
+                )
+                | (
+                    429,
+                    Err(CleanupError::Unconfirmed {
+                        acceptance: DeleteAcceptance::Rejected,
+                        cause: OperationError::Rejected(ProviderRejection::Status { status: 429 }),
+                        ..
+                    }),
+                )
+                | (
+                    503,
+                    Err(CleanupError::Unconfirmed {
+                        acceptance: DeleteAcceptance::Unknown,
+                        cause: OperationError::Protocol(ProtocolError::Status { status: 503 }),
+                        ..
+                    }),
+                )
+        );
+        require(valid, "DELETE classification")?;
+        server.finish().await?;
+    }
+    Ok(())
+}
+#[tokio::test]
+async fn upload_and_download_share_the_transfer_limit_error() -> Result<(), TestError> {
+    let server = Server::start(vec![Step::json(
+        "GET /toolbox/sb-1/files/download?",
+        200,
+        "too large",
+    )])
+    .await?;
+    let client = Daytona::with_config(
+        Credentials::ApiKey(ApiKey::new("test-secret")?),
+        server.config()?.transfer_limit(TransferLimit::new(2)?),
+    )?;
+    let sandbox = client.sandbox(SandboxId::new("sb-1")?);
+    let path = std::env::temp_dir().join(format!("transfer-limit-{}", uuid::Uuid::new_v4()));
+    let remote = SandboxPath::new("/tmp/artifact")?;
+    require(
+        matches!(
+            sandbox
+                .download(&remote, &LocalDestinationPath::new(&path)?)
+                .await,
+            Err(TransferError::Limit)
+        ),
+        "download limit",
+    )?;
+    require(!path.exists(), "oversize download creates no destination")?;
+    std::fs::write(&path, "too large")?;
+    let result = sandbox.upload(&LocalSourcePath::new(&path)?, &remote).await;
+    std::fs::remove_file(path)?;
+    require(
+        matches!(result, Err(TransferError::Limit)),
+        "upload limit before request",
+    )?;
+    server.finish().await
+}

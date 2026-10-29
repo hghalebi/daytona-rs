@@ -399,13 +399,22 @@ impl Sandbox<'_> {
             Ok(response) if response.status == 404 => return Ok(DeletionConfirmed { id }),
             Ok(response) if (200..300).contains(&response.status) => DeleteAcceptance::Acknowledged,
             Ok(response) => {
+                let status = response.status;
+                let (acceptance, cause) = if (400..500).contains(&status) {
+                    (
+                        DeleteAcceptance::Rejected,
+                        OperationError::Rejected(ProviderRejection::new(status)),
+                    )
+                } else {
+                    (
+                        DeleteAcceptance::Unknown,
+                        OperationError::Protocol(ProtocolError::Status { status }),
+                    )
+                };
                 return Err(CleanupError::Unconfirmed {
                     sandbox: id,
-                    acceptance: DeleteAcceptance::Unknown,
-                    cause: ProtocolError::Status {
-                        status: response.status,
-                    }
-                    .into(),
+                    acceptance,
+                    cause,
                 });
             }
             Err(DeliveryFailure::Before(cause)) => {

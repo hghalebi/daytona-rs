@@ -41,3 +41,12 @@ both scope error branches and an explicit `--show-output` option.
 CleanupError::into_parts moves the identity, acceptance, and reason into recovery
 code. Keep the reason as well as the ID; a deadline and an operation rejection
 require different decisions.
+
+## Classify failures without parsing messages
+
+Upload and download return TransferError::Limit for the configured file cap.
+DELETE 401/403 return provider authentication/authorization errors; other 4xx
+except 404 return a provider status rejection. A 404 confirms absence. Server
+errors retain protocol status and uncertain deletion acceptance. See the
+[0.2 migration guide](https://github.com/hghalebi/daytona-rs/blob/main/docs/migration-0.2.md)
+for changed matches. There are no automatic mutation retries.

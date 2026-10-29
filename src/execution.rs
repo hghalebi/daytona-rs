@@ -263,7 +263,10 @@ impl FileTransfer for Sandbox<'_> {
                 self.client.transfer_limit.get(),
             )
             .await
-            .map_err(DeliveryFailure::into_operation)?
+            .map_err(|failure| match failure {
+                DeliveryFailure::After(TransportError::BodyLimit) => TransferError::Limit,
+                other => TransferError::Operation(other.into_operation()),
+            })?
             .success()?;
         Ok(FileContents(response.body))
     }
