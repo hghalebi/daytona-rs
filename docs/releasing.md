@@ -1,6 +1,6 @@
 # Releasing daytona-rs
 
-The first prepared version is **0.1.0**. The package is `daytona-rs`, the library
+The initial release version is **0.1.0**. The package is `daytona-rs`, the library
 import is `daytona`, and the internal `source-policy` package has `publish = false`.
 Only the crates.io registry is allowed by the SDK manifest.
 

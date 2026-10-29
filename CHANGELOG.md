@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — prepared, not yet published
+## 0.1.0 — 2026-10-29
 
 Initial release of the unofficial Daytona Rust SDK. Requires Rust 1.98.0 and a
 Tokio runtime. The Cargo package is `daytona-rs`; the library import is `daytona`.

@@ -5,7 +5,7 @@
 [Contributing](https://github.com/hghalebi/daytona-rs/blob/main/CONTRIBUTING.md)
 
 An unofficial, independently maintained SDK for Daytona. This project is not
-affiliated with or endorsed by Daytona. Version 0.1.0 is the first release candidate;
+affiliated with or endorsed by Daytona. Version 0.1.0 is the initial release;
 its public API may change in subsequent 0.x releases.
 
 A Rust SDK with validated domain inputs, consuming creation states, borrowed
@@ -31,11 +31,11 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-The registry dependency above becomes available when 0.1.0 is published. For local
-work before publication, replace `version = "0.1"` with `path = "../daytona-rs"`.
-[API documentation](https://docs.rs/daytona-rs/latest/daytona/) will be available
-after docs.rs builds the first release. Use the dependency alias `daytona` as shown
-above to match the library import name.
+Use the dependency alias `daytona` as shown above to match the library import
+name. For local development, replace `version = "0.1"` with
+`path = "../daytona-rs"`.
+[API documentation](https://docs.rs/daytona-rs/latest/daytona/) is hosted by docs.rs;
+availability follows its build of each registry release.
 
 The complete compiled example is [`examples/scoped.rs`](https://github.com/hghalebi/daytona-rs/blob/main/examples/scoped.rs).
 It exposes `run_example(&Daytona)`; its `main` does not read credentials or create
