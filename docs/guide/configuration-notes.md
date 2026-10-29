@@ -37,6 +37,10 @@ even with an explicit execution timeout. The earlier deadline wins. Raising only
 the client cap does not add grace to the command request timeout. No timeout proves a process
 stopped. A TTL is a fallback, not proof of deletion.
 
+For separate provider and HTTP limits, use [CommandBudget](crate::CommandBudget)
+as shown in [long commands](crate::guide::long_commands). The last budget or
+execution_timeout setter wins.
+
 For self-hosted or regional deployments, construct both trusted base URLs with
 [`Endpoint`](crate::Endpoint) and pass them to `ClientConfig::new`. HTTPS is required
 except for loopback HTTP. Credentials are sent to the explicitly configured

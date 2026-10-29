@@ -31,3 +31,10 @@ such as submission before validation. Results make failures explicit. Ownership
 makes transfers of responsibility visible. An observation cannot guarantee future
 remote state. The [compile contracts](crate::contracts) show accepted and rejected
 uses. The deeper implementation rationale is in the repository’s contract guide.
+
+## Keep application state simple
+
+An owned handle can return its ID with Sandbox::into_id. This is a local ownership
+transfer; the remote sandbox keeps running. A scoped callback cannot consume its
+borrowed handle. Use the [bounded supervisor](crate::guide::agent_jobs) when one
+client must serve several jobs without detached borrowed tasks.

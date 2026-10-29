@@ -10,7 +10,10 @@ owns its text.
 
 1. `ApiKey::new` validates the credential text. The provider checks access later.
 2. `Daytona::new` owns the transport. The scope borrows the client.
-3. The script and execution timeout move into the callback once.
+3. The script and execution timeout move into the callback once. Build them first
+   so local validation fails before creation. async move transfers these captured
+   values; its sandbox argument remains borrowed. The returned execution Result
+   tells Rust the callback error type, so no closure type annotation is needed.
 4. `checked_output().await` waits for an explicit successful exit.
 5. The scope deletes its sandbox after the callback returns, including when work fails.
 6. `write!` reports terminal failures through `?` rather than ignoring them.

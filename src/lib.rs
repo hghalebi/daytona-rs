@@ -11,6 +11,9 @@
 //! | Learn the inputs | [Validated values](guide::inputs) |
 //! | Configure a client | [Credentials, endpoints, and limits](guide::configuration) |
 //! | Run a command | [First command](guide::getting_started), then [results](guide::commands) |
+//! | Configure scoped work | [Source, resources, network](guide::configured_scope) |
+//! | Run a longer command | [Command budgets](guide::long_commands) |
+//! | Run agent jobs | [Bounded supervisor](guide::agent_jobs) |
 //! | Transfer a file | [Upload and download](guide::files) |
 //! | Handle failures | [Work and cleanup](guide::errors) |
 //! | Manage a resource manually | [Lifecycle](guide::lifecycle) |

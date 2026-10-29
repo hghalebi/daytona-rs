@@ -54,6 +54,9 @@ in CI. To learn without a key, start with `cargo run --example validate_inputs`.
 | Task | Guide |
 | --- | --- |
 | Validate inputs | [Input lesson](https://docs.rs/daytona-rs/latest/daytona/guide/inputs/) |
+| Configure a temporary sandbox | [Configured scope](https://docs.rs/daytona-rs/latest/daytona/guide/configured_scope/) |
+| Run longer commands | [Explicit budgets](https://docs.rs/daytona-rs/latest/daytona/guide/long_commands/) |
+| Run bounded agent jobs | [Supervisor example](https://docs.rs/daytona-rs/latest/daytona/guide/agent_jobs/) |
 | Configure limits | [Configuration](https://docs.rs/daytona-rs/latest/daytona/guide/configuration/) |
 | Inspect command failures | [Command results](https://docs.rs/daytona-rs/latest/daytona/guide/commands/) |
 | Generate code with Pi, run it, and delete the sandbox | [Coding agent](https://docs.rs/daytona-rs/latest/daytona/guide/pi_task/) |
@@ -91,6 +94,7 @@ create cloud resources. Recovery records belong in ignored `.plan/`; credentials
 and those records are excluded from Git and the crate archive.
 
 Report bugs through [GitHub issues](https://github.com/hghalebi/daytona-rs/issues).
+Migrating from 0.1? Read the [0.2 migration guide](docs/migration-0.2.md).
 Use [private vulnerability reporting](SECURITY.md) for security issues.
 See the [changelog](CHANGELOG.md) for release details.
 
