@@ -1463,3 +1463,42 @@ impl CommandBudget {
         &self.http
     }
 }
+
+/// Maximum lifecycle operations waiting for an occupied HTTP permit.
+#[derive(Debug)]
+pub struct PendingLifecycleLimit(NonZeroUsize);
+impl PendingLifecycleLimit {
+    /// Checks a positive pending-operation count within Tokio's permit range.
+    ///
+    /// # Errors
+    /// Returns ValidationError for zero or an unsupported semaphore size.
+    pub fn new(value: usize) -> Result<Self, ValidationError> {
+        if value > tokio::sync::Semaphore::MAX_PERMITS {
+            return Err(ValidationError::Range {
+                field: "PendingLifecycleLimit",
+            });
+        }
+        NonZeroUsize::new(value)
+            .map(Self)
+            .ok_or(ValidationError::Zero {
+                field: "PendingLifecycleLimit",
+            })
+    }
+    /// Returns the pending-operation count.
+    pub fn get(&self) -> usize {
+        self.0.get()
+    }
+}
+/// Admission policy for observations and deletion, sharing the ordinary HTTP cap.
+#[derive(Debug)]
+pub enum LifecycleCapacity {
+    /// Reject immediately when the HTTP cap is occupied. This is the default.
+    FailFast,
+    /// Wait within a bounded queue and deadline. No extra active capacity is added.
+    Wait {
+        /// Maximum pending lifecycle operations.
+        pending: PendingLifecycleLimit,
+        /// Maximum capacity wait; outer client and lifecycle deadlines still apply.
+        timeout: RequestTimeout,
+    },
+}

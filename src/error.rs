@@ -24,6 +24,9 @@ pub enum ConfigurationError {
 /// Interpret transmission evidence in its operation context; a timeout does not
 /// make a mutation safe to replay. See [recovery](crate::guide::recovery).
 pub enum TransportError {
+    /// Capacity waiting expired. This request was not sent.
+    #[error("capacity deadline elapsed; request was not sent")]
+    CapacityDeadline,
     #[error("the configured concurrency limit is occupied; request was not sent")]
     /// The concurrency limit was full. This request was not sent.
     Busy,
@@ -286,6 +289,10 @@ pub enum CleanupError {
 #[derive(Debug)]
 /// What is known about the deletion request, independent of confirmed removal.
 pub enum DeleteAcceptance {
+    /// This deletion attempt was proven not transmitted. Earlier attempts may exist.
+    NotSubmitted,
+    /// The provider rejected this attempt. This does not describe earlier attempts.
+    Rejected,
     /// The provider accepted deletion, but removal has not been confirmed.
     Acknowledged,
     /// Deletion acceptance is unknown.

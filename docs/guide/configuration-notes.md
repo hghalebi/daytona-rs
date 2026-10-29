@@ -19,7 +19,7 @@ Next: [run your first command](crate::guide::getting_started).
 
 | Setting | Default | What it bounds |
 | --- | --- | --- |
-| Concurrency | 16 | In-flight HTTP operations; no waiting queue |
+| Concurrency | 16 | In-flight HTTP operations; fail-fast admission by default |
 | Response capture | 4 MiB | JSON, including command output |
 | File transfer | 16 MiB | File bytes buffered in memory |
 | HTTP request | 60 seconds | Request and response body |
@@ -46,3 +46,18 @@ Use [`Resources`](crate::Resources) for CPU, memory, and disk. Memory and disk u
 provider GB fields. [`NetworkPolicy`](crate::NetworkPolicy) chooses provider
 behavior, blocking, or allow lists. Provider permissions and quotas remain runtime
 checks. See the constructors for exact accepted ranges.
+
+## Lifecycle capacity
+
+ClientConfig::lifecycle_capacity accepts LifecycleCapacity::Wait with a validated
+PendingLifecycleLimit and RequestTimeout. It queues only observations and deletion,
+within the same total HTTP cap. Ordinary execution, creation, and transfer requests
+still fail fast. A full pending queue returns Busy; expired waiting returns
+CapacityDeadline. Neither transmits that request. Readiness and cleanup deadlines
+include capacity waiting. Cancelling a waiter releases its queue slot.
+
+The default remains FailFast. Bounded waiting helps short bursts; it cannot promise
+cleanup while another operation occupies capacity beyond the cleanup deadline.
+DeleteAcceptance::NotSubmitted describes only this attempt. A prior attempt may
+already have taken effect. An acknowledged DELETE remains acknowledged if a later
+confirmation poll fails.

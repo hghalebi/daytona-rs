@@ -9,12 +9,22 @@ pub struct ClientConfig {
     api: Endpoint,
     toolbox: Endpoint,
     concurrency: ConcurrencyLimit,
+    lifecycle: LifecycleCapacity,
     response: ResponseLimit,
     transfer: TransferLimit,
     request_timeout: RequestTimeout,
     pub(crate) poll: PollInterval,
 }
 impl ClientConfig {
+    /// Sets bounded admission for observations and deletion. Default: fail fast.
+    ///
+    /// Waiting shares the same active HTTP cap. Queue slots and wait duration are
+    /// bounded; readiness and cleanup deadlines include capacity waiting.
+    pub fn lifecycle_capacity(mut self, policy: LifecycleCapacity) -> Self {
+        self.lifecycle = policy;
+        self
+    }
+
     /// Builds configuration for the Daytona cloud API and toolbox.
     ///
     /// Defaults: 16 in-flight requests, 4 MiB JSON, 16 MiB files, a 60-second
@@ -40,6 +50,7 @@ impl ClientConfig {
             api,
             toolbox,
             concurrency: ConcurrencyLimit::new(16)?,
+            lifecycle: LifecycleCapacity::FailFast,
             response: ResponseLimit::new(4_194_304)?,
             transfer: TransferLimit::new(16_777_216)?,
             request_timeout: RequestTimeout::seconds(60)?,
@@ -48,7 +59,8 @@ impl ClientConfig {
     }
     /// Sets the in-flight HTTP limit. Default: 16.
     ///
-    /// There is no waiting queue. Excess requests return [`TransportError::Busy`].
+    /// Ordinary requests never queue. Lifecycle waiting is opt-in through
+    /// lifecycle_capacity; excess requests return [`TransportError::Busy`].
     pub fn concurrency(mut self, value: ConcurrencyLimit) -> Self {
         self.concurrency = value;
         self
@@ -122,6 +134,7 @@ impl Daytona {
                 config.concurrency,
                 config.response,
                 config.request_timeout,
+                config.lifecycle,
             )?,
             api: config.api,
             toolbox: config.toolbox,
@@ -267,7 +280,7 @@ impl SandboxControl for Daytona {
         let url = self.api_url(&format!("sandbox/{}", id.as_str()))?;
         let response = self
             .transport
-            .send(self.transport.request(reqwest::Method::GET, url))
+            .send_lifecycle(self.transport.request(reqwest::Method::GET, url))
             .await
             .map_err(DeliveryFailure::into_operation)?;
         if response.status == 404 {
@@ -364,7 +377,7 @@ impl Sandbox<'_> {
             Err(cause) => {
                 return Err(CleanupError::Unconfirmed {
                     sandbox: id,
-                    acceptance: DeleteAcceptance::Unknown,
+                    acceptance: DeleteAcceptance::NotSubmitted,
                     cause,
                 });
             }
@@ -374,26 +387,14 @@ impl Sandbox<'_> {
             None => {
                 return Err(CleanupError::Deadline {
                     sandbox: id,
-                    acceptance: DeleteAcceptance::Unknown,
+                    acceptance: DeleteAcceptance::NotSubmitted,
                 });
             }
         };
-        let delete = match tokio::time::timeout_at(
-            end,
-            client
-                .transport
-                .send_headers(client.transport.request(reqwest::Method::DELETE, url)),
-        )
-        .await
-        {
-            Ok(result) => result,
-            Err(_) => {
-                return Err(CleanupError::Deadline {
-                    sandbox: id,
-                    acceptance: DeleteAcceptance::Unknown,
-                });
-            }
-        };
+        let delete = client
+            .transport
+            .send_headers_until(client.transport.request(reqwest::Method::DELETE, url), end)
+            .await;
         let acceptance = match delete {
             Ok(response) if response.status == 404 => return Ok(DeletionConfirmed { id }),
             Ok(response) if (200..300).contains(&response.status) => DeleteAcceptance::Acknowledged,
@@ -405,6 +406,21 @@ impl Sandbox<'_> {
                         status: response.status,
                     }
                     .into(),
+                });
+            }
+            Err(DeliveryFailure::Before(cause)) => {
+                return Err(CleanupError::Unconfirmed {
+                    sandbox: id,
+                    acceptance: DeleteAcceptance::NotSubmitted,
+                    cause: cause.into(),
+                });
+            }
+            Err(DeliveryFailure::After(TransportError::Timeout))
+                if tokio::time::Instant::now() >= end =>
+            {
+                return Err(CleanupError::Deadline {
+                    sandbox: id,
+                    acceptance: DeleteAcceptance::Unknown,
                 });
             }
             Err(e) => {

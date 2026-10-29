@@ -9,6 +9,18 @@ pub(crate) struct Transport {
     permits: Semaphore,
     limit: ResponseLimit,
     timeout: RequestTimeout,
+    lifecycle: Admission,
+}
+enum Admission {
+    FailFast,
+    Wait {
+        slots: Semaphore,
+        timeout: RequestTimeout,
+    },
+}
+enum OperationClass {
+    Ordinary,
+    Lifecycle,
 }
 pub(crate) enum DeliveryFailure {
     Before(TransportError),
@@ -28,6 +40,7 @@ impl Transport {
         concurrency: ConcurrencyLimit,
         limit: ResponseLimit,
         timeout: RequestTimeout,
+        lifecycle: LifecycleCapacity,
     ) -> Result<Self, ConfigurationError> {
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -42,6 +55,13 @@ impl Transport {
             permits: Semaphore::new(concurrency.get()),
             limit,
             timeout,
+            lifecycle: match lifecycle {
+                LifecycleCapacity::FailFast => Admission::FailFast,
+                LifecycleCapacity::Wait { pending, timeout } => Admission::Wait {
+                    slots: Semaphore::new(pending.get()),
+                    timeout,
+                },
+            },
         })
     }
     pub fn request(&self, method: reqwest::Method, url: url::Url) -> reqwest::RequestBuilder {
@@ -67,27 +87,88 @@ impl Transport {
         request: reqwest::RequestBuilder,
         limit: usize,
     ) -> Result<WireResponse, DeliveryFailure> {
-        self.send_with_capture(request, Capture::Bounded(limit))
-            .await
+        self.send_with_capture(
+            request,
+            Capture::Bounded(limit),
+            OperationClass::Ordinary,
+            None,
+        )
+        .await
     }
-    pub async fn send_headers(
+    pub async fn send_lifecycle(
         &self,
         request: reqwest::RequestBuilder,
     ) -> Result<WireResponse, DeliveryFailure> {
-        self.send_with_capture(request, Capture::HeadersOnly).await
+        self.send_with_capture(
+            request,
+            Capture::Bounded(self.limit.get()),
+            OperationClass::Lifecycle,
+            None,
+        )
+        .await
+    }
+    pub async fn send_headers_until(
+        &self,
+        request: reqwest::RequestBuilder,
+        end: tokio::time::Instant,
+    ) -> Result<WireResponse, DeliveryFailure> {
+        self.send_with_capture(
+            request,
+            Capture::HeadersOnly,
+            OperationClass::Lifecycle,
+            Some(end),
+        )
+        .await
+    }
+    async fn acquire(
+        &self,
+        class: OperationClass,
+        end: tokio::time::Instant,
+    ) -> Result<tokio::sync::SemaphorePermit<'_>, DeliveryFailure> {
+        if let Ok(permit) = self.permits.try_acquire() {
+            return Ok(permit);
+        }
+        match (&self.lifecycle, class) {
+            (Admission::Wait { slots, timeout }, OperationClass::Lifecycle) => {
+                let _waiting = slots
+                    .try_acquire()
+                    .map_err(|_| DeliveryFailure::Before(TransportError::Busy))?;
+                let wait_end = tokio::time::Instant::now()
+                    .checked_add(timeout.duration())
+                    .ok_or(DeliveryFailure::Before(TransportError::Build))?
+                    .min(end);
+                tokio::time::timeout_at(wait_end, self.permits.acquire())
+                    .await
+                    .map_err(|_| DeliveryFailure::Before(TransportError::CapacityDeadline))?
+                    .map_err(|_| DeliveryFailure::Before(TransportError::Busy))
+            }
+            _ => Err(DeliveryFailure::Before(TransportError::Busy)),
+        }
     }
     async fn send_with_capture(
         &self,
         request: reqwest::RequestBuilder,
         capture: Capture,
+        class: OperationClass,
+        lifecycle_end: Option<tokio::time::Instant>,
     ) -> Result<WireResponse, DeliveryFailure> {
         let request = request
             .build()
             .map_err(|_| DeliveryFailure::Before(TransportError::Build))?;
-        let _permit = self
-            .permits
-            .try_acquire()
-            .map_err(|_| DeliveryFailure::Before(TransportError::Busy))?;
+        let client_end = tokio::time::Instant::now()
+            .checked_add(self.timeout.duration())
+            .ok_or(DeliveryFailure::Before(TransportError::Build))?;
+        let end = match lifecycle_end {
+            Some(end) => end.min(client_end),
+            None => client_end,
+        };
+        if tokio::time::Instant::now() >= end {
+            return Err(DeliveryFailure::Before(TransportError::CapacityDeadline));
+        }
+        let _permit = self.acquire(class, end).await?;
+        if tokio::time::Instant::now() >= end {
+            return Err(DeliveryFailure::Before(TransportError::CapacityDeadline));
+        }
         // Covers body consumption as well as connection establishment.
         let operation = async {
             let mut response = self
@@ -127,7 +208,7 @@ impl Transport {
             }
             Ok(WireResponse { status, body })
         };
-        match tokio::time::timeout(self.timeout.duration(), operation).await {
+        match tokio::time::timeout_at(end, operation).await {
             Ok(result) => result.map_err(DeliveryFailure::After),
             Err(_) => Err(DeliveryFailure::After(TransportError::Timeout)),
         }
@@ -391,6 +472,100 @@ mod tests {
         if !matches!(result, Readiness::Deadline) {
             return Err(TestError::Contract);
         }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    #[derive(Debug, thiserror::Error)]
+    enum TestError {
+        #[error(transparent)]
+        Validation(#[from] ValidationError),
+        #[error(transparent)]
+        Configuration(#[from] ConfigurationError),
+        #[error("admission contract failed")]
+        Contract,
+    }
+    fn transport() -> Result<Transport, TestError> {
+        Ok(Transport::new(
+            Credentials::ApiKey(ApiKey::new("synthetic")?),
+            ConcurrencyLimit::new(1)?,
+            ResponseLimit::new(100)?,
+            RequestTimeout::seconds(3)?,
+            LifecycleCapacity::Wait {
+                pending: PendingLifecycleLimit::new(1)?,
+                timeout: RequestTimeout::seconds(1)?,
+            },
+        )?)
+    }
+    fn end() -> Result<tokio::time::Instant, TestError> {
+        tokio::time::Instant::now()
+            .checked_add(std::time::Duration::from_secs(3))
+            .ok_or(TestError::Contract)
+    }
+    #[tokio::test(start_paused = true)]
+    async fn lifecycle_queue_bounds_overflow_and_releases_waiters() -> Result<(), TestError> {
+        let transport = transport()?;
+        let held = transport
+            .permits
+            .try_acquire()
+            .map_err(|_| TestError::Contract)?;
+        let waiting = transport.acquire(OperationClass::Lifecycle, end()?);
+        let release = async {
+            tokio::task::yield_now().await;
+            if !matches!(
+                transport.acquire(OperationClass::Lifecycle, end()?).await,
+                Err(DeliveryFailure::Before(TransportError::Busy))
+            ) {
+                return Err(TestError::Contract);
+            }
+            if transport.permits.available_permits() != 0 {
+                return Err(TestError::Contract);
+            }
+            drop(held);
+            Ok(())
+        };
+        let (admitted, result) = tokio::join!(waiting, release);
+        result?;
+        let permit = admitted.map_err(|_| TestError::Contract)?;
+        if transport.permits.available_permits() != 0 {
+            return Err(TestError::Contract);
+        }
+        drop(permit);
+        if transport.permits.available_permits() != 1 {
+            return Err(TestError::Contract);
+        }
+        Ok(())
+    }
+    #[tokio::test(start_paused = true)]
+    async fn cancelled_and_expired_capacity_waits_are_unsent() -> Result<(), TestError> {
+        let transport = transport()?;
+        let held = transport
+            .permits
+            .try_acquire()
+            .map_err(|_| TestError::Contract)?;
+        let cancelled = tokio::time::timeout(
+            std::time::Duration::from_millis(10),
+            transport.acquire(OperationClass::Lifecycle, end()?),
+        )
+        .await;
+        if cancelled.is_ok() {
+            return Err(TestError::Contract);
+        }
+        if !matches!(
+            transport.acquire(OperationClass::Lifecycle, end()?).await,
+            Err(DeliveryFailure::Before(TransportError::CapacityDeadline))
+        ) {
+            return Err(TestError::Contract);
+        }
+        drop(held);
+        let permit = transport
+            .acquire(OperationClass::Lifecycle, end()?)
+            .await
+            .map_err(|_| TestError::Contract)?;
+        drop(permit);
         Ok(())
     }
 }

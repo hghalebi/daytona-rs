@@ -46,6 +46,10 @@ pub fn require(value: bool, contract: &'static str) -> Result<(), TestError> {
 pub enum Reply {
     Json(u16, &'static str),
     Disconnect,
+    GatedOutput {
+        entered: tokio::sync::oneshot::Sender<()>,
+        release: tokio::sync::oneshot::Receiver<()>,
+    },
     Chunked(&'static str),
     Redirect,
     Stall(std::time::Duration),
@@ -141,6 +145,16 @@ impl Server {
                 match step.reply {
                     Reply::DelayedOutput(delay) => {
                         tokio::time::sleep(delay).await;
+                        let body = r#"{"result":"finished","exitCode":0}"#;
+                        stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await?;
+                    }
+                    Reply::GatedOutput { entered, release } => {
+                        entered
+                            .send(())
+                            .map_err(|_| TestError::Contract("entry receiver"))?;
+                        release
+                            .await
+                            .map_err(|_| TestError::Contract("release sender"))?;
                         let body = r#"{"result":"finished","exitCode":0}"#;
                         stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await?;
                     }

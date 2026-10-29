@@ -958,3 +958,99 @@ async fn separate_command_budget_and_setter_precedence() -> Result<(), TestError
         .await?;
     server.finish().await
 }
+
+#[tokio::test]
+async fn lifecycle_admission_shares_capacity_and_retains_unsent_delete() -> Result<(), TestError> {
+    for wait in [false, true] {
+        let (entered, entry) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let mut steps = vec![Step {
+            path: "POST /toolbox/sb-1/process/execute ",
+            contains: Vec::new(),
+            reply: Reply::GatedOutput {
+                entered,
+                release: released,
+            },
+        }];
+        if wait {
+            steps.push(delete_step(200));
+            steps.push(absent_step());
+        }
+        let server = Server::start(steps).await?;
+        let config = server.config()?.concurrency(ConcurrencyLimit::new(1)?);
+        let config = if wait {
+            config.lifecycle_capacity(LifecycleCapacity::Wait {
+                pending: PendingLifecycleLimit::new(1)?,
+                timeout: RequestTimeout::seconds(1)?,
+            })
+        } else {
+            config
+        };
+        let client =
+            Daytona::with_config(Credentials::ApiKey(ApiKey::new("test-secret")?), config)?;
+        let worker = client.sandbox(SandboxId::new("sb-1")?);
+        let command = worker.shell(ShellScript::new("work")?).checked_output();
+        let cleanup = async {
+            entry
+                .await
+                .map_err(|_| TestError::Contract("entry signal"))?;
+            let delete = client
+                .sandbox(SandboxId::new("sb-1")?)
+                .delete(WaitTimeout::seconds(2)?);
+            if wait {
+                let resume = async {
+                    tokio::task::yield_now().await;
+                    release.send(()).map_err(|_| TestError::Contract("release"))
+                };
+                let (result, resumed) = tokio::join!(delete, resume);
+                resumed?;
+                result?;
+            } else {
+                require(
+                    matches!(
+                        delete.await,
+                        Err(CleanupError::Unconfirmed {
+                            acceptance: DeleteAcceptance::NotSubmitted,
+                            cause: OperationError::Transport(TransportError::Busy),
+                            ..
+                        })
+                    ),
+                    "busy DELETE proven unsent",
+                )?;
+                release
+                    .send(())
+                    .map_err(|_| TestError::Contract("release"))?;
+            }
+            Ok::<_, TestError>(())
+        };
+        let (work, cleanup) = tokio::join!(command, cleanup);
+        work?;
+        cleanup?;
+        server.finish().await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn deletion_poll_failure_retains_acknowledgement() -> Result<(), TestError> {
+    let server = Server::start(vec![
+        delete_step(200),
+        Step::json("GET /api/sandbox/sb-1 ", 503, "{}"),
+    ])
+    .await?;
+    let client = server.client()?;
+    require(
+        matches!(
+            client
+                .sandbox(SandboxId::new("sb-1")?)
+                .delete(WaitTimeout::seconds(1)?)
+                .await,
+            Err(CleanupError::Unconfirmed {
+                acceptance: DeleteAcceptance::Acknowledged,
+                ..
+            })
+        ),
+        "poll failure keeps acknowledgement",
+    )?;
+    server.finish().await
+}
