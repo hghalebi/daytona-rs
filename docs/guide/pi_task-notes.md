@@ -36,9 +36,13 @@ Extensions, MCP, skills, context files, and session persistence are disabled.
 These settings reduce the work allowed in this lesson. They are not a security
 boundary for arbitrary model output. See Pi's [CLI reference](https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/cli.md).
 
-The model credential lives outside the work directory. It is removed before the
-generated program runs. If an earlier step fails, scope deletion removes the
-sandbox and its files. The local credential export belongs to the setup shell;
+The model credential lives outside the work directory. An exit handler attempts removal on ordinary success and failure, before the
+generated program runs. Its bounded status record retains both work and removal
+status. Missing status means removal is unknown. Scope deletion is still attempted
+after a returned work error. A killed process, transport loss, or cancelled scope
+can prevent these steps. If deletion remains unconfirmed, recover the sandbox and
+revoke the exported credential through its provider when needed. TTL is not proof
+of erasure. The local credential export belongs to the setup shell;
 the Rust example does not modify your original Pi login.
 
 ## When something fails

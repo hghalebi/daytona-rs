@@ -41,6 +41,10 @@ enum TaskError {
     Json(#[from] serde_json::Error),
     #[error("the generated program did not print 30")]
     OutputMismatch,
+    #[error("Pi work or credential removal failed (statuses retained)")]
+    Generation { work: ExitCode, removal: ExitCode },
+    #[error("Pi credential removal could not be established")]
+    RemovalUnknown,
 }
 
 // This validates the exported file's shape. Pi and its provider check the login.
@@ -72,16 +76,50 @@ timeout 210 npm install --prefix /tmp/daytona-pi/tool --ignore-scripts --no-audi
 
 const GENERATE: &str = r#"
 set -eu
-chmod 600 /tmp/daytona-pi/auth/auth.json
-cd /tmp/daytona-pi/work
-export PI_CODING_AGENT_DIR=/tmp/daytona-pi/auth
-timeout 210 /tmp/daytona-pi/tool/node_modules/.bin/pi \
+root=${PI_TASK_ROOT:-/tmp/daytona-pi}
+finish() {
+  work=$?
+  trap - EXIT
+  removal=0
+  rm -f "$root/auth/auth.json" || removal=$?
+  printf '\nDAYTONA_PI_STATUS:{"work":%s,"removal":%s}\n' "$work" "$removal"
+  if [ "$work" -ne 0 ]; then exit "$work"; fi
+  exit "$removal"
+}
+trap finish EXIT
+chmod 600 "$root/auth/auth.json"
+cd "$root/work"
+export PI_CODING_AGENT_DIR="$root/auth"
+timeout 210 "$root/tool/node_modules/.bin/pi" \
   --offline --print --provider openai-codex --model gpt-6-luna --thinking low \
   --no-session --no-extensions --no-mcp --no-skills --no-prompt-templates \
   --no-context-files --no-approve --tools write -- \
   'Create sum_even.py in the current directory using the write tool. It must define sum_even(numbers), returning the sum of the even integers in numbers. When run as a script, print sum_even(range(1, 11)), which is 30. Use only the Python standard library. Do not read any files or credentials. Create the file, do not only describe it.'
-rm /tmp/daytona-pi/auth/auth.json
 "#;
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GenerationStatus {
+    work: ExitCode,
+    removal: ExitCode,
+}
+fn check_generation(text: &str) -> Result<(), TaskError> {
+    let record = text
+        .lines()
+        .last()
+        .and_then(|line| line.strip_prefix("DAYTONA_PI_STATUS:"))
+        .ok_or(TaskError::RemovalUnknown)?;
+    let status: GenerationStatus =
+        serde_json::from_str(record).map_err(|_| TaskError::RemovalUnknown)?;
+    if status.work.is_success() && status.removal.is_success() {
+        Ok(())
+    } else {
+        Err(TaskError::Generation {
+            work: status.work,
+            removal: status.removal,
+        })
+    }
+}
 
 async fn generate(
     sandbox: &Sandbox<'_>,
@@ -105,11 +143,13 @@ async fn generate(
             &SandboxPath::new("/tmp/daytona-pi/auth/auth.json")?,
         )
         .await?;
-    sandbox
+    let generation = sandbox
         .shell(ShellScript::new(GENERATE)?)
         .execution_timeout(ExecutionTimeout::seconds(240)?)
-        .checked_output()
+        .output()
         .await?;
+    check_generation(generation.text())?;
+    generation.checked()?;
 
     // Check real execution separately from Pi's description of its work.
     let output = sandbox
@@ -179,4 +219,79 @@ async fn main() -> Result<(), ExampleError> {
         directory.join("sum_even.py").display()
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[derive(Debug, Error)]
+    enum TestError {
+        #[error(transparent)]
+        Io(#[from] std::io::Error),
+        #[error("credential removal contract failed")]
+        Contract,
+    }
+    fn executable(path: &Path, source: &str) -> Result<(), TestError> {
+        std::fs::write(path, source)?;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))?;
+        Ok(())
+    }
+    #[test]
+    fn generation_removal_preserves_both_outcomes() -> Result<(), TestError> {
+        for (work, removal) in [(0, 0), (7, 0), (0, 9), (7, 9), (124, 0)] {
+            let root = std::env::temp_dir().join(format!("pi-cleanup-{}", uuid::Uuid::new_v4()));
+            std::fs::create_dir_all(root.join("auth"))?;
+            std::fs::create_dir_all(root.join("work"))?;
+            std::fs::create_dir_all(root.join("bin"))?;
+            std::fs::create_dir_all(root.join("tool/node_modules/.bin"))?;
+            let result = (|| -> Result<(), TestError> {
+                std::fs::write(root.join("auth/auth.json"), "synthetic")?;
+                executable(
+                    &root.join("tool/node_modules/.bin/pi"),
+                    &format!("#!/bin/sh\nexit {work}\n"),
+                )?;
+                executable(&root.join("bin/timeout"), "#!/bin/sh\nshift\nexec \"$@\"\n")?;
+                if removal != 0 {
+                    executable(
+                        &root.join("bin/rm"),
+                        &format!("#!/bin/sh\nexit {removal}\n"),
+                    )?;
+                }
+                let output = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(GENERATE)
+                    .env("PI_TASK_ROOT", &root)
+                    .env(
+                        "PATH",
+                        format!("{}:/usr/bin:/bin", root.join("bin").display()),
+                    )
+                    .output()?;
+                let text = std::str::from_utf8(&output.stdout).map_err(|_| TestError::Contract)?;
+                match check_generation(text) {
+                    Ok(()) if work == 0 && removal == 0 => {}
+                    Err(TaskError::Generation {
+                        work: w,
+                        removal: r,
+                    }) if w.get() == work && r.get() == removal => {}
+                    _ => return Err(TestError::Contract),
+                }
+                if root.join("auth/auth.json").exists() != (removal != 0) {
+                    return Err(TestError::Contract);
+                }
+                Ok(())
+            })();
+            let cleanup = std::fs::remove_dir_all(&root);
+            cleanup?;
+            result?;
+        }
+        if !matches!(
+            check_generation("no record"),
+            Err(TaskError::RemovalUnknown)
+        ) {
+            return Err(TestError::Contract);
+        }
+        Ok(())
+    }
 }
