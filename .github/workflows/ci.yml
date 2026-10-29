@@ -32,6 +32,16 @@ jobs:
         run: cargo install --path tools/source-policy --root target/policy --locked
       - name: Check all owned Rust sources with installed executable
         run: target/policy/bin/source-policy .
+      - name: Check that environment files cannot enter the crate
+        shell: bash
+        run: |
+          set -o noclobber
+          printf '%s\n' 'DAYTONA_API_KEY=package-exclusion-fixture' > src/.env.package-fixture
+          trap 'rm -f src/.env.package-fixture' EXIT
+          package_files=$(cargo package -p daytona-rs --list --locked)
+          if printf '%s\n' "$package_files" | grep -E '(^|/)\.env($|\.)'; then
+            exit 1
+          fi
       - name: Build the release archive
         run: cargo package -p daytona-rs --locked
       - name: Verify the crates.io package without uploading

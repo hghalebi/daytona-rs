@@ -37,3 +37,12 @@ positive examples, local HTTP protocol tests, deterministic clock tests, and an
 AST/token source-policy executable with negative fixtures. This policy excludes
 explicit cloning and common panic paths in owned sources, not dependency internals,
 allocation failure, arbitrary macro expansion, or user callbacks.
+
+
+The opt-in live smoke example consumes process environment credentials through
+validated API key and endpoint types. It saves correlation before creation and
+identity before work under ignored `.plan/`, uses a five-minute provider TTL,
+checks positive/negative command results and a file round trip, then confirms
+scope cleanup with a separate observation. It requires `--run-live` and is never
+executed by normal tests or CI. Package inclusion is limited to source/document
+extensions; `.env` files are excluded even inside source directories.

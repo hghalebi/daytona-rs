@@ -228,3 +228,29 @@ part of the published package.
 
 Licensed under either [the MIT license](https://github.com/hghalebi/daytona-rs/blob/main/LICENSE-MIT) or
 [the Apache License, Version 2.0](https://github.com/hghalebi/daytona-rs/blob/main/LICENSE-APACHE), at your option.
+
+
+## Live verification
+
+An authorized cloud smoke test on 2026-10-29 passed creation, checked shell
+execution, nonzero exit handling, upload/download, and scoped cleanup. A separate
+provider API request confirmed the sandbox was absent after deletion. This is
+point-in-time evidence for those operations, not a service availability guarantee.
+
+The [live smoke example](https://github.com/hghalebi/daytona-rs/blob/main/examples/live_smoke.rs)
+is opt-in and is never executed by CI. Supply `DAYTONA_API_KEY` through your
+process environment. Optional `DAYTONA_API_URL` and `DAYTONA_TOOLBOX_URL` override
+the cloud endpoints; the program does not automatically read dotenv files.
+
+```sh
+cargo build --release --example live_smoke --locked
+mkdir -p target/bin
+install -m 755 target/release/examples/live_smoke target/bin/daytona-live-smoke
+target/bin/daytona-live-smoke --run-live
+```
+
+Running this command creates a potentially billable sandbox with a five-minute
+TTL, performs synthetic probes, then deletes it and reads it back. Recovery
+references and receipts are written to ignored `.plan/live-smoke-*` directories.
+Retain those records if execution is interrupted or cleanup cannot be confirmed.
+Environment files and `.plan` records are excluded from both Git and the crate.

@@ -6,9 +6,11 @@ Only the crates.io registry is allowed by the SDK manifest.
 
 ## Package contents and documentation
 
-The manifest's include list ships source, tests, examples, documentation,
+The manifest's include list ships Rust source files, tests, examples, Markdown documentation,
 Cargo manifests/lockfile, the pinned toolchain, Clippy configuration, changelog,
-and both license texts. `README.md` and `docs/compile-contracts.md` are compile-time
+and both license texts. Extension-restricted patterns exclude `.env` files even
+when they are placed inside source directories; CI verifies this with a synthetic
+environment-file fixture. `README.md` and `docs/compile-contracts.md` are compile-time
 inputs through `include_str!`; both must remain in the archive.
 
 Cargo normalizes workspace-inherited lints into the packaged manifest. The

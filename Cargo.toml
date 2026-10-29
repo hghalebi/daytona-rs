@@ -23,10 +23,10 @@ include = [
     "/LICENSE-APACHE",
     "/clippy.toml",
     "/rust-toolchain.toml",
-    "/src/**",
-    "/examples/**",
-    "/tests/**",
-    "/docs/**",
+    "/src/**/*.rs",
+    "/examples/**/*.rs",
+    "/tests/**/*.rs",
+    "/docs/**/*.md",
 ]
 
 [package.metadata.docs.rs]

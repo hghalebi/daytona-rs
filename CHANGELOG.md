@@ -16,6 +16,9 @@ Tokio runtime. The Cargo package is `daytona-rs`; the library import is `daytona
   when cleanup fails.
 - Shell execution that requires an explicit zero exit status for checked success.
 - Bounded file upload/download and confirmed sandbox deletion.
+- An explicit opt-in live smoke executable with saved recovery references.
+- Package inclusion restricted to source/document extensions, with a CI fixture
+  ensuring environment files are excluded even inside source directories.
 - Bounded concurrency, response capture, deadlines, and read-only polling;
   no automatic mutation retries or redirects.
 - Redacted diagnostics, typed errors, compiler misuse tests, local protocol tests,
@@ -23,13 +26,15 @@ Tokio runtime. The Cargo package is `daytona-rs`; the library import is `daytona
 
 ### Operational scope
 
-- Verification uses a local HTTP server and deterministic clock tests. No live
-  Daytona cloud smoke test has been performed.
+- Verification uses a local HTTP server and deterministic clock tests. An
+  authorized live smoke test on 2026-10-29 also passed sandbox creation, shell
+  execution, nonzero exit handling, file upload/download, scoped cleanup, and a
+  separate provider readback confirming absence.
 - Cancellation does not perform asynchronous cleanup. Save the creation/scope
   reference before execution when explicit recovery is required; provider TTL is
   a fallback, not locally verified destruction.
 - This release does not implement every Daytona endpoint. Sessions management,
   preview discovery, snapshot management, volumes, and computer-use operations
   are outside its implemented API.
-- Automatic platform checks target Linux and macOS. A configured CI workflow is
-  not evidence of a completed remote CI run.
+- Automatic platform checks target Linux and macOS; current results are linked
+  from the public repository Actions tab.
