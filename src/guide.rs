@@ -101,3 +101,9 @@ pub mod troubleshooting {}
 #[doc = include_str!("../examples/configured_scope.rs")]
 #[doc = "\n```\n"]
 pub mod configured_scope {}
+
+#[doc = include_str!("../docs/guide/long_commands.md")]
+#[doc = "\n```rust,no_run\n"]
+#[doc = include_str!("../examples/long_command.rs")]
+#[doc = "\n```\n"]
+pub mod long_commands {}

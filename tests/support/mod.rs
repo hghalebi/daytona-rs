@@ -51,6 +51,7 @@ pub enum Reply {
     Stall(std::time::Duration),
     Correlated,
     StallBody(std::time::Duration),
+    DelayedOutput(std::time::Duration),
 }
 pub struct Step {
     pub path: &'static str,
@@ -138,6 +139,11 @@ impl Server {
                     require(request.contains(&fragment), "wire field")?;
                 }
                 match step.reply {
+                    Reply::DelayedOutput(delay) => {
+                        tokio::time::sleep(delay).await;
+                        let body = r#"{"result":"finished","exitCode":0}"#;
+                        stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await?;
+                    }
                     Reply::Disconnect => {}
                     Reply::Stall(delay) => tokio::time::sleep(delay).await,
                     Reply::StallBody(delay) => {

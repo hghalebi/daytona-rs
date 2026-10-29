@@ -1437,3 +1437,29 @@ impl CommandReference {
         &self.command
     }
 }
+
+/// Independent provider execution and HTTP waiting limits for one command.
+///
+/// Both inputs are positive validated durations. A shorter HTTP wait is allowed
+/// for deliberate early return, but does not stop remote work. The client's hard
+/// request cap still applies. See [long commands](crate::guide::long_commands).
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommandBudget {
+    execution: ExecutionTimeout,
+    http: RequestTimeout,
+}
+impl CommandBudget {
+    /// Combines validated limits without changing either duration.
+    pub fn new(execution: ExecutionTimeout, http: RequestTimeout) -> Self {
+        Self { execution, http }
+    }
+    /// Borrows the provider execution limit.
+    pub fn execution(&self) -> &ExecutionTimeout {
+        &self.execution
+    }
+    /// Borrows the per-request HTTP waiting limit.
+    pub fn http(&self) -> &RequestTimeout {
+        &self.http
+    }
+}

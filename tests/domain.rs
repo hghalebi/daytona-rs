@@ -189,3 +189,25 @@ fn secrets_and_intent_redact_debug() -> Result<(), TestError> {
     }
     Ok(())
 }
+
+#[test]
+fn command_budget_validates_every_ingress() -> Result<(), TestError> {
+    let budget = CommandBudget::new(ExecutionTimeout::seconds(30)?, RequestTimeout::seconds(5)?);
+    let encoded = serde_json::to_string(&budget)?;
+    let decoded: CommandBudget = serde_json::from_str(&encoded)?;
+    require(
+        decoded.execution().as_seconds() == 30 && decoded.http().as_seconds() == 5,
+        "independent budget roundtrip",
+    )?;
+    for invalid in [
+        r#"{"execution":0,"http":5}"#,
+        r#"{"execution":5,"http":0}"#,
+        r#"{"execution":4294967295,"http":5}"#,
+    ] {
+        require(
+            serde_json::from_str::<CommandBudget>(invalid).is_err(),
+            "budget ingress",
+        )?;
+    }
+    Ok(())
+}

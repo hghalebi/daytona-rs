@@ -65,8 +65,13 @@ pub struct Shell<'sandbox, 'client> {
 }
 pub(crate) struct ValidatedShellRequest {
     script: ShellScript,
-    timeout: Option<ExecutionTimeout>,
+    timing: CommandTiming,
     cwd: Option<SandboxPath>,
+}
+enum CommandTiming {
+    ClientDefault,
+    Coupled(ExecutionTimeout),
+    Separate(CommandBudget),
 }
 /// No retries: failure after transmission may leave a running command.
 pub(crate) trait ShellExecutor {
@@ -82,7 +87,7 @@ impl<'client> Sandbox<'client> {
             sandbox: self,
             request: ValidatedShellRequest {
                 script,
-                timeout: None,
+                timing: CommandTiming::ClientDefault,
                 cwd: None,
             },
         }
@@ -148,13 +153,22 @@ impl<'client> Sandbox<'client> {
     }
 }
 impl Shell<'_, '_> {
+    /// Sets independent execution and HTTP limits for this command.
+    ///
+    /// The last call to this method or execution_timeout wins. The client cap
+    /// remains an outer bound. See [long commands](crate::guide::long_commands).
+    pub fn budget(mut self, budget: CommandBudget) -> Self {
+        self.request.timing = CommandTiming::Separate(budget);
+        self
+    }
+
     /// Sets the provider execution limit and this request’s HTTP timeout.
     ///
     /// Without this setting, the provider receives 10 seconds and the HTTP request
     /// uses the client deadline. The outer client cap always applies, even with
     /// this setting. A timeout does not confirm process termination.
     pub fn execution_timeout(mut self, timeout: ExecutionTimeout) -> Self {
-        self.request.timeout = Some(timeout);
+        self.request.timing = CommandTiming::Coupled(timeout);
         self
     }
     /// Sets the remote working directory. Its existence and permissions are checked remotely.
@@ -195,9 +209,10 @@ impl ShellExecutor for Sandbox<'_> {
         request: &ValidatedShellRequest,
     ) -> Result<ShellOutput, ExecutionError> {
         let url = self.client.toolbox_url(&self.id, "process/execute")?;
-        let timeout = match &request.timeout {
-            Some(t) => t.as_seconds(),
-            None => 10,
+        let timeout = match &request.timing {
+            CommandTiming::Coupled(t) => t.as_seconds(),
+            CommandTiming::Separate(budget) => budget.execution().as_seconds(),
+            CommandTiming::ClientDefault => 10,
         };
         let dto = ExecuteDto {
             command: request.script.as_str(),
@@ -209,9 +224,10 @@ impl ShellExecutor for Sandbox<'_> {
             .transport
             .request(reqwest::Method::POST, url)
             .json(&dto);
-        let outgoing = match &request.timeout {
-            Some(t) => outgoing.timeout(t.duration()),
-            None => outgoing,
+        let outgoing = match &request.timing {
+            CommandTiming::Coupled(t) => outgoing.timeout(t.duration()),
+            CommandTiming::Separate(budget) => outgoing.timeout(budget.http().duration()),
+            CommandTiming::ClientDefault => outgoing,
         };
         let response: OutputDto = self
             .client

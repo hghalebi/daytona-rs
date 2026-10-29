@@ -920,3 +920,41 @@ async fn configured_scopes_preserve_intent_and_all_cleanup_outcomes() -> Result<
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn separate_command_budget_and_setter_precedence() -> Result<(), TestError> {
+    let server = Server::start(vec![
+        Step {
+            path: "POST /toolbox/sb-1/process/execute ",
+            contains: vec![String::from("\"timeout\":1")],
+            reply: Reply::DelayedOutput(std::time::Duration::from_millis(1200)),
+        },
+        execute_step(SUCCESS).containing(vec!["\"timeout\":3"]),
+    ])
+    .await?;
+    let client = server.client()?;
+    let sandbox = client.sandbox(SandboxId::new("sb-1")?);
+    let result = sandbox
+        .shell(ShellScript::new("work")?)
+        .execution_timeout(ExecutionTimeout::seconds(3)?)
+        .budget(CommandBudget::new(
+            ExecutionTimeout::seconds(1)?,
+            RequestTimeout::seconds(2)?,
+        ))
+        .checked_output()
+        .await?;
+    require(
+        result.text() == "finished",
+        "HTTP grace beyond provider limit",
+    )?;
+    sandbox
+        .shell(ShellScript::new("work")?)
+        .budget(CommandBudget::new(
+            ExecutionTimeout::seconds(1)?,
+            RequestTimeout::seconds(2)?,
+        ))
+        .execution_timeout(ExecutionTimeout::seconds(3)?)
+        .checked_output()
+        .await?;
+    server.finish().await
+}
