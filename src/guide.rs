@@ -69,6 +69,12 @@ pub mod files {
 
 #[doc = include_str!("../docs/guide/errors.md")]
 pub mod errors {
+    #[doc = include_str!("../docs/guide/diagnose_failure.md")]
+    #[doc = "\n```rust,no_run\n"]
+    #[doc = include_str!("../examples/diagnose_failure.rs")]
+    #[doc = "\n```\n"]
+    pub mod diagnose_failure {}
+
     #[doc = include_str!("../docs/guide/preserve_work.md")]
     #[doc = "\n```rust,no_run\n"]
     #[doc = include_str!("../examples/preserve_work.rs")]

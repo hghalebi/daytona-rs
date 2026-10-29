@@ -30,3 +30,14 @@ attempt explicitly. The SDK does not retry mutations automatically.
 Setup errors after uncertain creation require [reconciliation](crate::guide::recovery),
 not an assumption that no resource exists. Cancellation never runs async Drop
 cleanup. A TTL remains a provider fallback rather than observed evidence.
+
+## Inspect command output
+
+ExecutionError::output borrows retained output from either exit-related failure.
+It returns None for transport/protocol failures. Default diagnostics stay redacted.
+The [complete diagnostic example](crate::guide::errors::diagnose_failure) shows
+both scope error branches and an explicit `--show-output` option.
+
+CleanupError::into_parts moves the identity, acceptance, and reason into recovery
+code. Keep the reason as well as the ID; a deadline and an operation rejection
+require different decisions.

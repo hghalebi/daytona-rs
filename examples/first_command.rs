@@ -21,8 +21,7 @@ enum ExampleError {
     Output(#[from] std::io::Error),
 }
 
-#[tokio::main]
-async fn main() -> Result<(), ExampleError> {
+async fn run() -> Result<(), ExampleError> {
     if !std::env::args().any(|argument| argument == "--run-live") {
         return Err(ExampleError::ConsentRequired);
     }
@@ -48,4 +47,27 @@ async fn main() -> Result<(), ExampleError> {
     // The output owns its text. The sandbox has already been deleted.
     write!(std::io::stdout().lock(), "{}", output.text())?;
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<std::process::ExitCode, std::io::Error> {
+    match run().await {
+        Ok(()) => Ok(std::process::ExitCode::SUCCESS),
+        Err(error) => {
+            writeln!(std::io::stderr().lock(), "{error}")?;
+            if let ExampleError::Scope(scope) = &error {
+                if let Some(work) = scope.work_error() {
+                    writeln!(std::io::stderr().lock(), "Work: {work}")?;
+                }
+                if let Some(cleanup) = scope.cleanup_error() {
+                    writeln!(
+                        std::io::stderr().lock(),
+                        "Cleanup: {cleanup}; sandbox {}",
+                        cleanup.sandbox_id().as_str()
+                    )?;
+                }
+            }
+            Ok(std::process::ExitCode::FAILURE)
+        }
+    }
 }

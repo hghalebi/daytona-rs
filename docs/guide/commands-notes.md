@@ -4,10 +4,9 @@
 Handled exit code 7; sandbox deleted
 ```
 
-`checked_output` requires a reported zero code. A nonzero code returns
-[`ExecutionError::NonZeroExit`](crate::ExecutionError::NonZeroExit) with captured
-output. The example recognizes code 7, then returns owned output to the scope.
-Cleanup still happens before main prints the result.
+This example uses `output()` because exit code 7 is expected data. It checks the
+optional code after cleanup. Use `checked_output()` when the command must report
+zero; a nonzero or missing code then becomes an error retaining the output.
 
 | Result | Meaning | Next step |
 | --- | --- | --- |
@@ -20,6 +19,8 @@ Use [`Shell::output`](crate::Shell::output) when all exit codes are ordinary dat
 for your application. Then inspect the optional code yourself. Never treat `None`
 as zero. Debug redacts text; `text()` exposes it deliberately.
 
-Try changing `exit 7` to `exit 9`. The program returns an execution failure after
+Try changing `exit 7` to `exit 9`. The program reports an unexpected exit after
 cleanup. If the HTTP request times out, the command may still be running; avoid
 blind replay. Next: [transfer files](crate::guide::files).
+
+For a failed checked command, follow [deliberate output inspection](crate::guide::errors::diagnose_failure).

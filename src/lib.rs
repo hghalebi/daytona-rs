@@ -15,6 +15,8 @@
 //! | Handle failures | [Work and cleanup](guide::errors) |
 //! | Manage a resource manually | [Lifecycle](guide::lifecycle) |
 //! | Recover after interruption | [Reconciliation](guide::recovery) |
+//! | Generate code with Pi | [Coding agent](guide::pi_task) |
+//! | Diagnose a command | [Deliberate output inspection](guide::errors::diagnose_failure) |
 //! | Run concurrent work | [Ownership](guide::ownership) |
 //!
 //! # A small workflow

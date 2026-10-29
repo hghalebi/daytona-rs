@@ -2,6 +2,16 @@
 
 Print a message in a temporary sandbox, then confirm its deletion.
 
+## The workflow
+
+1. Validate the script, execution limit, and sandbox lifetime locally.
+2. Borrow one client and let a scope create the sandbox.
+3. Run the command through the borrowed sandbox.
+4. Receive owned output after deletion is confirmed.
+
+The [small workflow at the crate root](crate) shows these steps with a configured
+client. The complete program below includes all setup and error handling.
+
 ## Before you start
 
 You need Rust 1.98.0, a Tokio runtime, and a Daytona API key. Basic Rust `Result`

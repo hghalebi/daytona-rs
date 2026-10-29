@@ -1,6 +1,6 @@
 use daytona::{
     ApiKey, ConfigurationError, Credentials, Daytona, ExecutionError, ExecutionTimeout, SandboxTtl,
-    ScopeError, ShellOutput, ShellScript, ValidationError,
+    ScopeError, ShellScript, ValidationError,
 };
 use std::io::Write;
 use thiserror::Error;
@@ -23,8 +23,7 @@ enum ExampleError {
     Output(#[from] std::io::Error),
 }
 
-#[tokio::main]
-async fn main() -> Result<(), ExampleError> {
+async fn run() -> Result<(), ExampleError> {
     if !std::env::args().any(|argument| argument == "--run-live") {
         return Err(ExampleError::ConsentRequired);
     }
@@ -39,18 +38,11 @@ async fn main() -> Result<(), ExampleError> {
         .ephemeral()
         .ttl(SandboxTtl::minutes(5)?)
         .run(async move |sandbox| {
-            match sandbox
+            sandbox
                 .shell(script)
                 .execution_timeout(timeout)
-                .checked_output()
+                .output()
                 .await
-            {
-                Err(ExecutionError::NonZeroExit { output }) => match output.exit_code() {
-                    Some(code) if code.get() == 7 => Ok::<ShellOutput, ExecutionError>(output),
-                    _ => Err(ExecutionError::NonZeroExit { output }),
-                },
-                other => other.map(|output| output.into_output()),
-            }
         })
         .await?;
 
@@ -64,4 +56,27 @@ async fn main() -> Result<(), ExampleError> {
     )?;
     drop(output);
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<std::process::ExitCode, std::io::Error> {
+    match run().await {
+        Ok(()) => Ok(std::process::ExitCode::SUCCESS),
+        Err(error) => {
+            writeln!(std::io::stderr().lock(), "{error}")?;
+            if let ExampleError::Scope(scope) = &error {
+                if let Some(work) = scope.work_error() {
+                    writeln!(std::io::stderr().lock(), "Work: {work}")?;
+                }
+                if let Some(cleanup) = scope.cleanup_error() {
+                    writeln!(
+                        std::io::stderr().lock(),
+                        "Cleanup: {cleanup}; sandbox {}",
+                        cleanup.sandbox_id().as_str()
+                    )?;
+                }
+            }
+            Ok(std::process::ExitCode::FAILURE)
+        }
+    }
 }
