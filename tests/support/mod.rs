@@ -50,6 +50,7 @@ pub enum Reply {
     Redirect,
     Stall(std::time::Duration),
     Correlated,
+    StallBody(std::time::Duration),
 }
 pub struct Step {
     pub path: &'static str,
@@ -139,6 +140,10 @@ impl Server {
                 match step.reply {
                     Reply::Disconnect => {}
                     Reply::Stall(delay) => tokio::time::sleep(delay).await,
+                    Reply::StallBody(delay) => {
+                        stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n").await?;
+                        tokio::time::sleep(delay).await;
+                    }
                     Reply::Json(status, body) => {
                         let response = format!(
                             "HTTP/1.1 {status} Mock\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",

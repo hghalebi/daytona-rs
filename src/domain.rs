@@ -13,7 +13,7 @@ use thiserror::Error;
 /// Variants identify the violated rule without retaining the sensitive input.
 /// See [validated inputs](crate::guide::inputs).
 pub enum ValidationError {
-    #[error("{field} must be nonempty and contain no control characters")]
+    #[error("{field} is empty or contains characters not allowed for this value")]
     /// Text failed the constructor’s format rules.
     InvalidText {
         /// Name of the domain value that failed validation.

@@ -32,7 +32,9 @@ Next: [run your first command](crate::guide::getting_started).
 [`ClientConfig`](crate::ClientConfig) changes HTTP limits. Scope methods change
 readiness and cleanup deadlines. [`Shell::execution_timeout`](crate::Shell::execution_timeout)
 sets the provider limit and an explicit request timeout. Without that setting,
-the command request uses the client HTTP deadline. No timeout proves a process
+the command request uses the client HTTP deadline. The outer client cap applies
+even with an explicit execution timeout. The earlier deadline wins. Raising only
+the client cap does not add grace to the command request timeout. No timeout proves a process
 stopped. A TTL is a fallback, not proof of deletion.
 
 For self-hosted or regional deployments, construct both trusted base URLs with

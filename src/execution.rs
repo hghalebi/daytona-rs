@@ -117,7 +117,6 @@ impl<'client> Sandbox<'client> {
             bytes: TransferredBytes(contents.0.len()),
         })
     }
-    /// Upload overwrites the specified remote file; a timeout may leave it changed.
     /// Uploads a bounded local file to the explicit remote path.
     ///
     /// The remote destination may be overwritten. Content is buffered in memory.
@@ -152,7 +151,8 @@ impl Shell<'_, '_> {
     /// Sets the provider execution limit and this request’s HTTP timeout.
     ///
     /// Without this setting, the provider receives 10 seconds and the HTTP request
-    /// uses the client deadline. A timeout does not confirm process termination.
+    /// uses the client deadline. The outer client cap always applies, even with
+    /// this setting. A timeout does not confirm process termination.
     pub fn execution_timeout(mut self, timeout: ExecutionTimeout) -> Self {
         self.request.timeout = Some(timeout);
         self

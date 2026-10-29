@@ -709,3 +709,44 @@ async fn deletion_acknowledgement_does_not_require_capturing_its_body() -> Resul
         .await?;
     server.finish().await
 }
+
+#[tokio::test]
+async fn command_and_client_deadlines_bound_headers_and_body() -> Result<(), TestError> {
+    for (client_seconds, command_seconds, body) in [(1, 3, false), (3, 1, false), (3, 1, true)] {
+        let delay = std::time::Duration::from_millis(1200);
+        let reply = if body {
+            Reply::StallBody(delay)
+        } else {
+            Reply::Stall(delay)
+        };
+        let server = Server::start(vec![Step {
+            path: "POST /toolbox/sb-1/process/execute ",
+            contains: Vec::new(),
+            reply,
+        }])
+        .await?;
+        let client = Daytona::with_config(
+            Credentials::ApiKey(ApiKey::new("test-secret")?),
+            server
+                .config()?
+                .request_timeout(RequestTimeout::seconds(client_seconds)?),
+        )?;
+        let sandbox = client.sandbox(SandboxId::new("sb-1")?);
+        let result = sandbox
+            .shell(ShellScript::new("sleep 10")?)
+            .execution_timeout(ExecutionTimeout::seconds(command_seconds)?)
+            .output()
+            .await;
+        require(
+            matches!(
+                result,
+                Err(ExecutionError::Operation(OperationError::Transport(
+                    TransportError::Timeout
+                )))
+            ),
+            "earlier HTTP bound covers headers and body",
+        )?;
+        server.finish().await?;
+    }
+    Ok(())
+}

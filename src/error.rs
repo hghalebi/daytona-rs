@@ -18,8 +18,6 @@ pub enum ConfigurationError {
     Credentials,
 }
 
-/// Sanitized transport classification. Raw URLs, bodies and credentials never
-/// enter diagnostics. A timeout is not evidence that a remote effect stopped.
 #[derive(Debug, Error)]
 /// A bounded HTTP operation could not produce a usable response.
 ///

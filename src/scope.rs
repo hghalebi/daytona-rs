@@ -42,7 +42,6 @@ impl<'client> Ephemeral<'client> {
     }
 }
 impl<State> Ephemeral<'_, State> {
-    /// Serialize before running when cancellation recovery is required.
     /// Borrows the creation reference. Persist it before running for cancellation recovery.
     pub fn reference(&self) -> &CreationReference {
         &self.reference
@@ -134,7 +133,6 @@ impl<E: Error + 'static> ScopeError<E> {
         }
     }
 }
-/// Successful output remains available even when cleanup fails.
 #[derive(Debug)]
 /// Work output and cleanup outcomes without discarding successful output.
 ///

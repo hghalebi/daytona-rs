@@ -25,9 +25,10 @@ both the sandbox and the local credential path. The downloaded file stays on you
 machine after the sandbox is gone. The callback returns `()` because the artifact
 has already been saved.
 
-The HTTP deadline is 270 seconds. Each long remote command has a 240-second SDK
-limit and a 210-second process limit. These limits leave time to return a command
-result. Network timeout still does not prove that remote work stopped.
+The outer client deadline is 270 seconds. Each long command has a 240-second
+provider limit and a 240-second per-request HTTP timeout. Its child process has
+a 210-second limit. Raising only the client cap does not increase the per-request
+timeout. Network timeout does not prove that remote work stopped.
 
 Pi runs once with `--print`. `--offline` disables automatic catalog refreshes;
 the selected model request still uses the network. Only the write tool is enabled.

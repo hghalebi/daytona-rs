@@ -28,8 +28,6 @@ impl ClientConfig {
             Endpoint::new("https://proxy.app.daytona.io/toolbox/")?,
         )
     }
-    /// Toolbox is an explicitly trusted credential recipient. Provider-returned
-    /// URLs never change this trust boundary; configure self-hosted endpoints here.
     /// Builds configuration for explicit API and toolbox endpoints.
     ///
     /// The toolbox receives credentials, so select a trusted endpoint. Other defaults
