@@ -89,3 +89,26 @@ async fn create(client: &Daytona, ttl: SandboxTtl) -> Result<Sandbox<'_>, Create
 }
 # async fn correct<'a>(_: Create<Draft>, _: ValidationError) -> Result<Sandbox<'a>, CreateError> { loop { std::future::pending::<()>().await; } }
 ```
+
+## A borrowed scope cannot give away its sandbox
+
+The callback can inspect the identity. It cannot consume the scope's handle.
+
+```compile_fail,E0507
+use daytona::{Daytona, SandboxTtl, SandboxId, ValidationError};
+async fn invalid(client: &Daytona) -> Result<(), ValidationError> {
+    let result = client.sandboxes().ephemeral().ttl(SandboxTtl::minutes(5)?)
+        .run(async |sandbox| Ok::<SandboxId, ValidationError>(sandbox.into_id())).await;
+    drop(result);
+    Ok(())
+}
+```
+
+An independently owned handle can return its identity without a request.
+
+```no_run
+use daytona::{Daytona, SandboxId};
+fn keep_identity(client: &Daytona, id: SandboxId) -> SandboxId {
+    client.sandbox(id).into_id()
+}
+```

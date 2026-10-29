@@ -314,6 +314,14 @@ pub struct Sandbox<'client> {
     pub(crate) id: SandboxId,
 }
 impl Sandbox<'_> {
+    /// Returns the owned identity without stopping or deleting the remote sandbox.
+    ///
+    /// Store this ID between operations and pass it to Daytona::sandbox later.
+    /// A scope callback only borrows its handle and cannot call this method.
+    pub fn into_id(self) -> SandboxId {
+        self.id
+    }
+
     /// Borrows the identity carried by this handle.
     pub fn id(&self) -> &SandboxId {
         &self.id

@@ -208,6 +208,40 @@ pub enum ExecutionError {
         output: ShellOutput,
     },
 }
+impl ExecutionError {
+    /// Borrows output retained by a nonzero or missing exit status.
+    ///
+    /// Returns None for operation failures. Text is exposed only through
+    /// ShellOutput::text; Debug remains redacted.
+    pub fn output(&self) -> Option<&ShellOutput> {
+        match self {
+            Self::NonZeroExit { output } | Self::MissingExitStatus { output } => Some(output),
+            Self::Operation(_) => None,
+        }
+    }
+}
+
+/// Owned evidence from an unconfirmed deletion.
+#[derive(Debug)]
+pub struct CleanupParts {
+    /// Identity for an explicit recovery action.
+    pub sandbox: SandboxId,
+    /// Known acceptance of this deletion request.
+    pub acceptance: DeleteAcceptance,
+    /// Why confirmation ended, including its cause when available.
+    pub reason: CleanupReason,
+}
+/// Why deletion confirmation ended.
+#[derive(Debug, Error)]
+pub enum CleanupReason {
+    /// The overall confirmation deadline elapsed.
+    #[error("deletion confirmation deadline elapsed")]
+    Deadline,
+    /// An operation failed before confirmation.
+    #[error(transparent)]
+    Operation(#[from] OperationError),
+}
+
 #[derive(Debug, Error)]
 /// A bounded upload or download failed. See [files](crate::guide::files).
 pub enum TransferError {
@@ -258,6 +292,29 @@ pub enum DeleteAcceptance {
     Unknown,
 }
 impl CleanupError {
+    /// Consumes the failure without discarding identity, acceptance, or cause.
+    pub fn into_parts(self) -> CleanupParts {
+        match self {
+            Self::Unconfirmed {
+                sandbox,
+                acceptance,
+                cause,
+            } => CleanupParts {
+                sandbox,
+                acceptance,
+                reason: CleanupReason::Operation(cause),
+            },
+            Self::Deadline {
+                sandbox,
+                acceptance,
+            } => CleanupParts {
+                sandbox,
+                acceptance,
+                reason: CleanupReason::Deadline,
+            },
+        }
+    }
+
     /// Borrows the identity whose deletion remains unconfirmed.
     pub fn sandbox_id(&self) -> &SandboxId {
         match self {

@@ -750,3 +750,61 @@ async fn command_and_client_deadlines_bound_headers_and_body() -> Result<(), Tes
     }
     Ok(())
 }
+
+#[tokio::test]
+async fn ownership_helpers_retain_output_identity_and_failure_evidence() -> Result<(), TestError> {
+    let server = Server::start(vec![
+        execute_step(r#"{"result":"sensitive","exitCode":7}"#),
+        execute_step(r#"{"result":"sensitive"}"#),
+    ])
+    .await?;
+    let client = server.client()?;
+    let sandbox = client.sandbox(SandboxId::new("sb-1")?);
+    for _ in 0..2 {
+        let failure = sandbox
+            .shell(ShellScript::new("exit 7")?)
+            .checked_output()
+            .await
+            .err()
+            .ok_or(TestError::Contract("checked failure"))?;
+        require(
+            failure.output().is_some_and(|o| o.text() == "sensitive"),
+            "output accessor",
+        )?;
+        require(
+            !format!("{failure:?}").contains("sensitive"),
+            "output redaction",
+        )?;
+    }
+    require(
+        ExecutionError::Operation(TransportError::Busy.into())
+            .output()
+            .is_none(),
+        "no invented output",
+    )?;
+    let parts = CleanupError::Unconfirmed {
+        sandbox: sandbox.into_id(),
+        acceptance: DeleteAcceptance::Acknowledged,
+        cause: TransportError::Connection.into(),
+    }
+    .into_parts();
+    require(
+        parts.sandbox.as_str() == "sb-1"
+            && matches!(parts.acceptance, DeleteAcceptance::Acknowledged)
+            && matches!(
+                parts.reason,
+                CleanupReason::Operation(OperationError::Transport(TransportError::Connection))
+            ),
+        "all cleanup parts",
+    )?;
+    let parts = CleanupError::Deadline {
+        sandbox: parts.sandbox,
+        acceptance: parts.acceptance,
+    }
+    .into_parts();
+    require(
+        matches!(parts.reason, CleanupReason::Deadline),
+        "deadline retained",
+    )?;
+    server.finish().await
+}
