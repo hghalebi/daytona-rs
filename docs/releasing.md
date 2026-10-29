@@ -1,6 +1,6 @@
 # Releasing daytona-rs
 
-The current release version is **0.2.0**. The package is `daytona-rs`, the library
+The current release version is **0.2.1**. The package is `daytona-rs`, the library
 import is `daytona`, and the internal `source-policy` package has `publish = false`.
 Only the crates.io registry is allowed by the SDK manifest.
 
@@ -44,13 +44,13 @@ Commit the reviewed files and use a clean tree for release checks. During local
 preparation, `--allow-dirty` permits inspection of uncommitted changes; it does
 not skip build verification. Do not use `--no-verify` to bypass a failing build.
 
-`cargo package` creates `target/package/daytona-rs-0.2.0.crate` and verifies an
+`cargo package` creates `target/package/daytona-rs-0.2.1.crate` and verifies an
 extracted copy. Cargo may stage the publish dry run archive in a temporary
 subdirectory instead; the explicit package command gives a stable artifact path. Run the shipped tests and documentation against that copy:
 
 ```sh
-cargo test --manifest-path target/package/daytona-rs-0.2.0/Cargo.toml --all-targets --locked
-cargo test --manifest-path target/package/daytona-rs-0.2.0/Cargo.toml --doc --locked
+cargo test --manifest-path target/package/daytona-rs-0.2.1/Cargo.toml --all-targets --locked
+cargo test --manifest-path target/package/daytona-rs-0.2.1/Cargo.toml --doc --locked
 ```
 
 For stronger isolation, extract the `.crate` archive to a temporary directory
@@ -79,8 +79,15 @@ cargo publish -p daytona-rs --registry crates-io --locked
 
 After upload, verify the registry version and checksum, install the dependency in
 a separate consumer project, and check that docs.rs built the API documentation.
-Tag the exact published commit as `v0.2.0` once the uploaded version is confirmed.
+Tag the exact published commit as `v0.2.1` once the uploaded version is confirmed.
 The CI workflow only performs verification and a dry run; it has no upload token
 and does not publish on pushes or tags.
 
 Reference: [Cargo's publishing guide](https://doc.rust-lang.org/cargo/reference/publishing.html).
+
+## Hosted documentation targets
+
+docs.rs builds the platform-neutral API on x86_64-unknown-linux-gnu. Native Linux
+and macOS builds are verified by GitHub Actions. Do not add an Apple cross target
+to docs.rs without proving the TLS dependency can build with the hosted C toolchain.
+A successful native macOS build does not prove that Linux-to-Apple cross build.

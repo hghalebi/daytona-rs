@@ -13,7 +13,7 @@ key. This example creates one temporary sandbox and runs `exit 7`.
 cargo run --example inspect_exit -- --run-live
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.2.0/source/examples/inspect_exit.rs)
+The [complete source](https://docs.rs/crate/daytona-rs/0.2.1/source/examples/inspect_exit.rs)
 is shipped with the crate and included below.
 
 ## Complete example

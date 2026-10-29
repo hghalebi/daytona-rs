@@ -17,7 +17,7 @@ Requires **Rust 1.98.0** and a Tokio runtime.
 
 ```toml
 [dependencies]
-daytona = { package = "daytona-rs", version = "0.2.0" }
+daytona = { package = "daytona-rs", version = "0.2.1" }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```

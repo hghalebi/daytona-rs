@@ -13,7 +13,7 @@ sandbox. Each command has an explicit timeout.
 cargo run --example concurrent_commands -- --run-live
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.2.0/source/examples/concurrent_commands.rs)
+The [complete source](https://docs.rs/crate/daytona-rs/0.2.1/source/examples/concurrent_commands.rs)
 is shipped with the crate and included below.
 
 ## Complete example

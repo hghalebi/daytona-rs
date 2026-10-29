@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1 — 2026-10-29
+
+- Build docs.rs documentation for its Linux host target. The additional Apple
+  target in 0.2.0 failed because the hosted Linux builder could not compile the
+  TLS dependency with Apple C compiler flags. Native macOS and Linux CI remain
+  enabled; SDK behavior and dependencies are unchanged.
+- Updated current installation and source links to 0.2.1.
+
 ## 0.2.0 — 2026-10-29
 
 - Added configured scoped execution through `ephemeral_from(Create<Validated>)`.
