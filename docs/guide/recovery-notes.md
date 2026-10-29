@@ -1,25 +1,18 @@
-## Expected result and explanation
+## Expected outcomes
 
-The output is one of:
+Observe mode prints `Found sandbox: <id>` or `Unresolved; do not replay creation`.
+Explicit delete also prints `Deletion confirmed` after absence is observed.
+Invalid schemas and mismatched organization context fail before network access.
 
-```text
-Found sandbox: <sandbox-id>
-```
+Reconciliation performs at most three read-only attempts within 15 seconds. Empty,
+ambiguous, and paginated results remain unresolved. An empty result does not prove
+that creation never happened. No path automatically resubmits creation.
 
-```text
-Unresolved; do not replay creation
-```
+The record stores the requested TTL and the local time intent was saved. Neither
+is proof of provider creation time or actual expiry. Its cloud environment tag
+cannot redirect credentials. Keep records private and use trusted current client
+configuration when extending the lesson for self-hosted endpoints.
 
-`CreationReference` deserialization checks its ID. It does not manufacture an
-acknowledgement. `reconcile` performs a read-only correlation lookup. A single
-matching result yields a receipt; no match, multiple matches, or pagination remain
-unresolved. Eventual consistency means an empty result cannot prove non-creation.
-
-A found receipt can be inspected, awaited, or converted into a handle for explicit
-cleanup. The example only prints its ID; the operator must decide the next action.
-Do not delete an unfamiliar resource just because a lookup returned it.
-
-Try reconciling a reference after confirmed deletion. An unresolved result is
-possible; it never authorizes automatic replay. An invalid JSON file fails before
-network access. No deliberately uncertain live create is needed to learn this flow.
-Next: [ownership and concurrency](crate::guide::ownership).
+Exercise: change the saved organization, then run observe mode. It should fail
+locally. Restore the original record before recovery. Next: [ownership and
+concurrency](crate::guide::ownership).

@@ -808,3 +808,33 @@ async fn ownership_helpers_retain_output_identity_and_failure_evidence() -> Resu
     )?;
     server.finish().await
 }
+
+#[tokio::test]
+async fn callback_deadline_returns_to_scope_for_cleanup() -> Result<(), TestError> {
+    let server = Server::start(vec![
+        create_step(),
+        ready_step(),
+        delete_step(200),
+        absent_step(),
+    ])
+    .await?;
+    let client = server.client()?;
+    let result = client
+        .sandboxes()
+        .ephemeral()
+        .ttl(SandboxTtl::minutes(10)?)
+        .run(async |_| {
+            tokio::time::timeout(
+                std::time::Duration::from_millis(10),
+                std::future::pending::<()>(),
+            )
+            .await
+            .map_err(|_| ExecutionError::Operation(TransportError::Timeout.into()))
+        })
+        .await;
+    require(
+        matches!(result, Err(ScopeError::Work(_))),
+        "callback deadline confirms cleanup",
+    )?;
+    server.finish().await
+}

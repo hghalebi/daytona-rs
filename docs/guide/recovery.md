@@ -1,23 +1,38 @@
-# Reconcile uncertain creation
+# Save intent and recover after interruption
 
-Look up a saved creation reference without creating another sandbox.
+Use a versioned application record to keep a creation reference with its trusted
+context. A reference is correlation data, not permission or proof of creation.
 
 ## Before you start
 
-Read [manual lifecycle](crate::guide::lifecycle). Use the same API/account context that
-created the reference. This example only reads remote state; it does not delete or
-recreate a sandbox. It needs a JSON reference saved before creation submission.
+Use the first-command dependencies, plus serde with its derive feature and
+serde_json. Set DAYTONA_API_KEY and DAYTONA_ORGANIZATION_ID for the same account.
+This lesson supports the Daytona cloud endpoints only. A saved file cannot choose
+another endpoint. The organization value is a local guard, not remote verification
+of the credential's membership. Confirm the account in your provider settings.
 
-Replace the example path below with your saved reference. The operation ID in the
-filename varies. The live smoke example stores a reference in its receipt directory.
-
-## Run from the source checkout
+Create a new record before a live, billable scope runs:
 
 ```sh
-cargo run --example recover_creation -- .plan/manual-YOUR_OPERATION_ID.json
+mkdir -p .plan
+cargo run --example recover_creation -- .plan/recovery.json --start --run-live
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.1.2/source/examples/recover_creation.rs)
-is shipped with the crate and included below.
+The file must not already exist. Failure to save it prevents creation. After an
+interruption, read the same record without creating or deleting anything:
+
+```sh
+cargo run --example recover_creation -- .plan/recovery.json
+```
+
+After checking the account, workflow, and found identity, request deletion explicitly:
+
+```sh
+cargo run --example recover_creation -- .plan/recovery.json --delete YOUR_SANDBOX_ID
+```
+
+The identity must match the reconciled receipt. A matching label alone is not
+authorization. This record format is specific to the lesson; it does not replace
+the SDK CreationReference format or accept older bare-reference files.
 
 ## Complete example

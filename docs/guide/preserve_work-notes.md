@@ -1,18 +1,12 @@
-## Expected result and explanation
+## What to notice
 
-```text
-Handler compiled; no remote failure was simulated
-```
+The handler saves successful output even when cleanup fails. A write failure
+retains the cleanup failure too. Replace the destination writer with a file in
+your application. A file already downloaded before cleanup survives a cleanup
+error. Do not call into_result first if you need that successful output.
 
-The main function only reports compilation. It does not invoke every handler
-branch. The protocol tests exercise success, work failure, cleanup failure, and
-combined failure deterministically.
+The callback deadline limits waiting. It does not prove that the remote command
+stopped. The scope still attempts cleanup when the callback returns an error.
 
-`run_report` retains successful output in `CleanupFailed`. The handler writes that
-output and still returns the cleanup error. If writing also fails, its concrete
-error retains both failures. `into_result` is convenient when you accept losing
-successful output on cleanup failure.
-
-Try tracing the `BothFailed` branch. Which errors survive? Both remain in
-`ScopeError::Both`; the standard error source chain shows only one branch.
-Next: [manual lifecycle](crate::guide::lifecycle).
+Exercise: trace BothFailed and OutputAndCleanup. Each retains both failures;
+a source() chain alone follows only one. Next: [restart recovery](crate::guide::recovery).
