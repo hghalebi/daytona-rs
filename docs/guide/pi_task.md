@@ -48,7 +48,7 @@ The example rejects auth files containing other provider entries. It never
 prints credentials, the model transcript, or remote command output on failure.
 
 For an application outside this checkout, use the dependencies from
-[getting started](crate::guide::getting_started) and add `serde_json = "1"`.
+[getting started](crate::guide::getting_started) and add `serde_json = "1"` plus `serde = { version = "1", features = ["derive"] }`.
 Copy the program below into `src/main.rs`, then use `cargo run -- --run-live`.
 
 The [complete source](https://docs.rs/crate/daytona-rs/0.1.2/source/examples/pi_task.rs)

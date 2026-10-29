@@ -107,3 +107,9 @@ pub mod configured_scope {}
 #[doc = include_str!("../examples/long_command.rs")]
 #[doc = "\n```\n"]
 pub mod long_commands {}
+
+#[doc = include_str!("../docs/guide/agent_jobs.md")]
+#[doc = "\n```rust,no_run\n"]
+#[doc = include_str!("../examples/agent_jobs.rs")]
+#[doc = "\n```\n"]
+pub mod agent_jobs {}
