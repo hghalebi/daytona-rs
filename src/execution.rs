@@ -2,6 +2,10 @@ use crate::{transport::*, *};
 use std::fmt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+/// Captured command text and an optional reported exit code.
+///
+/// Owns its data and may outlive the sandbox. Debug redacts text.
+/// See [command results](crate::guide::commands).
 pub struct ShellOutput {
     text: String,
     exit: Option<ExitCode>,
@@ -15,12 +19,19 @@ impl fmt::Debug for ShellOutput {
     }
 }
 impl ShellOutput {
+    /// Borrows captured text. It may contain secrets; display it deliberately.
     pub fn text(&self) -> &str {
         &self.text
     }
+    /// Borrows the reported exit code, or returns `None` when it was omitted.
     pub fn exit_code(&self) -> Option<&ExitCode> {
         self.exit.as_ref()
     }
+    /// Consumes this output and requires an explicit zero exit code.
+    ///
+    /// # Errors
+    /// Returns [`ExecutionError::NonZeroExit`] for a nonzero code, or
+    /// [`ExecutionError::MissingExitStatus`] for an absent code. Both retain output.
     pub fn checked(self) -> Result<CheckedOutput, ExecutionError> {
         match &self.exit {
             Some(exit) if exit.is_success() => Ok(CheckedOutput(self)),
@@ -30,15 +41,24 @@ impl ShellOutput {
     }
 }
 #[derive(Debug)]
+/// Owned command output with an explicitly reported zero exit code.
+///
+/// Constructed only by checking [`ShellOutput`]. See [first command](crate::guide::getting_started).
 pub struct CheckedOutput(ShellOutput);
 impl CheckedOutput {
+    /// Borrows the captured text from the successful command.
     pub fn text(&self) -> &str {
         self.0.text()
     }
+    /// Moves out the original output, including its reported exit code.
     pub fn into_output(self) -> ShellOutput {
         self.0
     }
 }
+/// A local command builder borrowing its sandbox.
+///
+/// No request is sent until output is awaited. The builder is consumed on
+/// execution. See [commands](crate::guide::commands).
 pub struct Shell<'sandbox, 'client> {
     sandbox: &'sandbox Sandbox<'client>,
     request: ValidatedShellRequest,
@@ -54,6 +74,9 @@ pub(crate) trait ShellExecutor {
     -> Result<ShellOutput, ExecutionError>;
 }
 impl<'client> Sandbox<'client> {
+    /// Moves a validated script into a local builder borrowing this sandbox.
+    ///
+    /// See [first command](crate::guide::getting_started).
     pub fn shell(&self, script: ShellScript) -> Shell<'_, 'client> {
         Shell {
             sandbox: self,
@@ -64,6 +87,17 @@ impl<'client> Sandbox<'client> {
             },
         }
     }
+    /// Downloads a bounded remote file into a newly created local file.
+    ///
+    /// An existing destination is never overwritten. Content is buffered in memory.
+    /// See [download lesson](crate::guide::files::download).
+    ///
+    /// # Errors
+    /// Returns [`TransferError`] for remote, limit, or local I/O failures.
+    /// [`TransferError::PartialWrite`] means the new destination may be incomplete.
+    ///
+    /// # Cancellation
+    /// Cancellation can leave a partial local file. Inspect it before reusing its path.
     pub async fn download(
         &self,
         remote: &SandboxPath,
@@ -84,6 +118,17 @@ impl<'client> Sandbox<'client> {
         })
     }
     /// Upload overwrites the specified remote file; a timeout may leave it changed.
+    /// Uploads a bounded local file to the explicit remote path.
+    ///
+    /// The remote destination may be overwritten. Content is buffered in memory.
+    /// See [upload lesson](crate::guide::files::upload).
+    ///
+    /// # Errors
+    /// Returns [`TransferError`] for local reads, size limits, transport, protocol,
+    /// or permission failures. An uncertain response may follow a successful write.
+    ///
+    /// # Cancellation
+    /// Cancellation does not undo a remote write. Read back the file when its result matters.
     pub async fn upload(
         &self,
         local: &LocalSourcePath,
@@ -104,17 +149,42 @@ impl<'client> Sandbox<'client> {
     }
 }
 impl Shell<'_, '_> {
+    /// Sets the provider execution limit and this request’s HTTP timeout.
+    ///
+    /// Without this setting, the provider receives 10 seconds and the HTTP request
+    /// uses the client deadline. A timeout does not confirm process termination.
     pub fn execution_timeout(mut self, timeout: ExecutionTimeout) -> Self {
         self.request.timeout = Some(timeout);
         self
     }
+    /// Sets the remote working directory. Its existence and permissions are checked remotely.
     pub fn cwd(mut self, path: SandboxPath) -> Self {
         self.request.cwd = Some(path);
         self
     }
+    /// Executes once and returns captured output without requiring a zero exit.
+    ///
+    /// See [command results](crate::guide::commands).
+    ///
+    /// # Errors
+    /// Returns [`ExecutionError::Operation`] when execution cannot be observed through
+    /// the transport or protocol. No automatic retry occurs.
+    ///
+    /// # Cancellation
+    /// Dropping the future does not stop the remote command or confirm its outcome.
     pub async fn output(self) -> Result<ShellOutput, ExecutionError> {
         self.sandbox.execute(&self.request).await
     }
+    /// Executes once and requires an explicitly reported zero exit code.
+    ///
+    /// See [first command](crate::guide::getting_started).
+    ///
+    /// # Errors
+    /// Returns transport/protocol failures, [`ExecutionError::NonZeroExit`], or
+    /// [`ExecutionError::MissingExitStatus`]. Exit-related failures retain output.
+    ///
+    /// # Cancellation
+    /// Dropping the future does not stop the remote command or undo its effects.
     pub async fn checked_output(self) -> Result<CheckedOutput, ExecutionError> {
         self.output().await?.checked()
     }
@@ -205,17 +275,24 @@ impl FileTransfer for Sandbox<'_> {
     }
 }
 #[derive(Debug)]
+/// The number of bytes in a completed file transfer.
 pub struct TransferredBytes(usize);
 impl TransferredBytes {
+    /// Returns the transferred byte count.
     pub fn get(&self) -> usize {
         self.0
     }
 }
 #[derive(Debug)]
+/// A completed transfer and its byte count.
+///
+/// An upload receipt acknowledges provider acceptance; it is not a checksum
+/// verification or a durability guarantee. See [files](crate::guide::files).
 pub struct TransferReceipt {
     bytes: TransferredBytes,
 }
 impl TransferReceipt {
+    /// Borrows the byte count for this completed transfer.
     pub fn bytes(&self) -> &TransferredBytes {
         &self.bytes
     }

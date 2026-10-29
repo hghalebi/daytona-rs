@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.1 — 2026-10-29
+
+- Added complete Rustdoc for the public API, including units, ownership, errors,
+  cancellation, and recovery contracts. Missing public documentation now fails builds.
+- Added a task-based docs.rs guide and ten small teaching examples, from local
+  input validation to explicit lifecycle and recovery. Guides include the canonical
+  example source so the displayed programs stay aligned with compiled code.
+- Simplified the README and separated first-use guidance from maintainer material.
+- Extended source-policy checks to Rustdoc comments, hidden lines, default Rust
+  blocks, indented blocks, and CommonMark fences. Ignored and panicking examples
+  are rejected. The Markdown parser is a dependency of the unpublished tool only.
+- Added local example execution and extracted-package documentation checks to CI.
+  Package paths now follow the manifest version.
+- Runtime SDK behavior and existing public API paths are unchanged.
+
 ## 0.1.0 — 2026-10-29
 
 Initial release of the unofficial Daytona Rust SDK. Requires Rust 1.98.0 and a

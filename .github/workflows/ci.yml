@@ -22,6 +22,11 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Domain, protocol, recovery, and policy fixtures
         run: cargo test --workspace --all-targets --locked
+      - name: Run local teaching examples
+        run: |
+          cargo run --example validate_inputs --locked
+          DAYTONA_API_KEY=documentation-example cargo run --example configure_client --locked
+          cargo run --example preserve_work --locked
       - name: Consumer compile contracts
         run: cargo test --doc --locked
       - name: Documentation
@@ -47,6 +52,10 @@ jobs:
       - name: Verify the crates.io package without uploading
         run: cargo publish -p daytona-rs --registry crates-io --dry-run --locked
       - name: Test the packaged SDK independently of workspace members
+        shell: bash
         run: |
-          cargo test --manifest-path target/package/daytona-rs-0.1.0/Cargo.toml --all-targets --locked
-          cargo test --manifest-path target/package/daytona-rs-0.1.0/Cargo.toml --doc --locked
+          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "daytona-rs"))')
+          package_dir="target/package/daytona-rs-${version}"
+          cargo test --manifest-path "${package_dir}/Cargo.toml" --all-targets --locked
+          cargo test --manifest-path "${package_dir}/Cargo.toml" --doc --locked
+          RUSTDOCFLAGS='-D warnings' cargo doc --manifest-path "${package_dir}/Cargo.toml" --no-deps --locked

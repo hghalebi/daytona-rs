@@ -6,7 +6,15 @@ Its pinned configuration disables test/constant exceptions for unwrap, expect,
 panic, and indexing, and disallows explicit Clone calls and runtime assertions.
 
 The compiled `source-policy` executable parses owned Rust files with Syn and
-inspects their token trees, and applies the same checks to Rust Markdown fences. Negative fixtures are strings in the policy test;
+inspects their token trees, and applies the same checks to Rust documentation.
+Adjacent `///`, `//!`, and literal doc attributes are assembled before checking.
+CommonMark parsing covers fenced and indented blocks, including unlabelled Rust
+blocks. Rustdoc hidden lines and escaped leading hashes are processed. `ignore`
+and `should_panic` examples are rejected. Included Markdown and Rust example files
+are scanned independently; arbitrary generated doc expressions are rejected.
+Compilation and Rustdoc validate the includes and links themselves.
+
+Negative fixtures are strings in the policy test;
 they are intentionally rejected inputs, not compiled SDK implementations.
 
 The checker rejects:

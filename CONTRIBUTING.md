@@ -48,3 +48,30 @@ real customer output, private endpoint details, or local `.plan` documents.
 
 Contributions are accepted under the repository's existing dual MIT/Apache-2.0
 license. Keep discussion respectful and focused on the code and its users.
+
+## Documentation and examples
+
+Use short, concrete sentences and consistent domain terms. Document the purpose
+first, then the inputs, ownership, effects, errors, and cancellation behavior that
+matter. Link to a complete task example rather than repeating the same program.
+The crate denies missing public documentation and broken intra-doc links.
+
+The guide includes source directly from `examples/`. Update that canonical file
+when changing a lesson. Give each lesson one new idea, expected output, a small
+exercise, and a next step. Local lessons run in CI; remote lessons require explicit
+execution and credentials. Keep compiled examples distinct from live-test proof.
+
+Run local examples with:
+
+```sh
+cargo run --example validate_inputs --locked
+DAYTONA_API_KEY=documentation-example cargo run --example configure_client --locked
+cargo run --example preserve_work --locked
+```
+
+The source-policy tool checks Rustdoc comments as well as Markdown and source
+files. Hidden lines follow the same rules. Use `no_run` for remote examples and
+`text` for pseudocode; do not use `ignore` or panicking examples to bypass checks.
+Review rendered Rustdoc after editing navigation or example layout.
+Verification uses Cargo, Clippy, the source-policy tool, and GitHub Actions.
+SonarCloud is not used.

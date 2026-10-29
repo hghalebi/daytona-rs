@@ -1,6 +1,6 @@
 # Releasing daytona-rs
 
-The initial release version is **0.1.0**. The package is `daytona-rs`, the library
+The current release version is **0.1.1**. The package is `daytona-rs`, the library
 import is `daytona`, and the internal `source-policy` package has `publish = false`.
 Only the crates.io registry is allowed by the SDK manifest.
 
@@ -10,8 +10,8 @@ The manifest's include list ships Rust source files, tests, examples, Markdown d
 Cargo manifests/lockfile, the pinned toolchain, Clippy configuration, changelog,
 and both license texts. Extension-restricted patterns exclude `.env` files even
 when they are placed inside source directories; CI verifies this with a synthetic
-environment-file fixture. `README.md` and `docs/compile-contracts.md` are compile-time
-inputs through `include_str!`; both must remain in the archive.
+environment-file fixture. The guide Markdown, canonical example files, and `docs/compile-contracts.md` are
+compile-time inputs through `include_str!`; all must remain in the archive.
 
 Cargo normalizes workspace-inherited lints into the packaged manifest. The
 unpublished policy tool is a checkout-only development dependency, not an SDK
@@ -35,35 +35,34 @@ cargo test -p daytona-rs --doc --locked
 RUSTDOCFLAGS='-D warnings' cargo doc -p daytona-rs --no-deps --locked
 cargo install --path tools/source-policy --root target/policy --locked
 target/policy/bin/source-policy .
-cargo package -p daytona-rs --list --locked --allow-dirty
-cargo package -p daytona-rs --locked --allow-dirty
-cargo publish -p daytona-rs --registry crates-io --dry-run --locked --allow-dirty
+cargo package -p daytona-rs --list --locked
+cargo package -p daytona-rs --locked
+cargo publish -p daytona-rs --registry crates-io --dry-run --locked
 ```
 
-`--allow-dirty` is for reviewing this local, uncommitted preparation. It does not
-skip Cargo's package build verification or upload anything during a dry run. For
-the actual release, commit the reviewed files and use a clean tree without this
-flag. Do not use `--no-verify` to bypass a failing package build.
+Commit the reviewed files and use a clean tree for release checks. During local
+preparation, `--allow-dirty` permits inspection of uncommitted changes; it does
+not skip build verification. Do not use `--no-verify` to bypass a failing build.
 
-`cargo package` creates `target/package/daytona-rs-0.1.0.crate` and verifies an
+`cargo package` creates `target/package/daytona-rs-0.1.1.crate` and verifies an
 extracted copy. Cargo may stage the publish dry run archive in a temporary
 subdirectory instead; the explicit package command gives a stable artifact path. Run the shipped tests and documentation against that copy:
 
 ```sh
-cargo test --manifest-path target/package/daytona-rs-0.1.0/Cargo.toml --all-targets --locked
-cargo test --manifest-path target/package/daytona-rs-0.1.0/Cargo.toml --doc --locked
+cargo test --manifest-path target/package/daytona-rs-0.1.1/Cargo.toml --all-targets --locked
+cargo test --manifest-path target/package/daytona-rs-0.1.1/Cargo.toml --doc --locked
 ```
 
 For stronger isolation, extract the `.crate` archive to a temporary directory
 outside this workspace and run the same checks there. Inspect the archive file
 list before publishing; no credential material, `.plan`, `target`, or `.git`
 content belongs in it. Future releases must update the version, changelog,
-archive paths in these commands.
+archive paths in these commands. CI derives its extracted-package path from Cargo metadata.
 
 ## Publication
 
 Publication is a separate explicit action. Before uploading, confirm the release
-version and package ownership, verify the public repository metadata, update the changelog's prepared status, and commit the reviewed release.
+version and package ownership, verify the public repository metadata, update the changelog, and commit the reviewed release.
 A read-only crates.io lookup returning 404 means the name is currently unlisted;
 it neither reserves the name nor guarantees registry acceptance.
 
@@ -80,7 +79,7 @@ cargo publish -p daytona-rs --registry crates-io --locked
 
 After upload, verify the registry version and checksum, install the dependency in
 a separate consumer project, and check that docs.rs built the API documentation.
-Tag the exact published commit as `v0.1.0` once the uploaded version is confirmed.
+Tag the exact published commit as `v0.1.1` once the uploaded version is confirmed.
 The CI workflow only performs verification and a dry run; it has no upload token
 and does not publish on pushes or tags.
 

@@ -191,44 +191,119 @@ fn check(source: &str) -> Result<CheckedSource, PolicyError> {
             .map_err(|e| PolicyError::Violation(e.to_string()))?,
     );
     policy.visit_file(&ast);
+    check_documentation(
+        source
+            .parse()
+            .map_err(|e: proc_macro2::LexError| PolicyError::Violation(e.to_string()))?,
+    )?;
     if policy.violations.is_empty() {
         Ok(CheckedSource)
     } else {
         Err(PolicyError::Violation(policy.violations.join(", ")))
     }
 }
-fn check_markdown(source: &str) -> Result<(), PolicyError> {
-    let mut fenced = false;
-    let mut rust = false;
-    let mut snippet = String::new();
-    for line in source.lines() {
-        if let Some(language) = line.trim().strip_prefix("```") {
-            if fenced {
-                if rust {
-                    check(&format!("fn documentation_example() {{\n{snippet}\n}}"))?;
-                }
-                fenced = false;
-                rust = false;
-                snippet.clear();
-            } else {
-                fenced = true;
-                rust = language
-                    .split(',')
-                    .any(|tag| matches!(tag.trim(), "rust" | "no_run" | "compile_fail"));
+// Adjacent doc attributes form one Markdown document. Recursing through token
+// groups covers item, method, field, variant, and inner module documentation.
+fn check_documentation(tokens: proc_macro2::TokenStream) -> Result<(), PolicyError> {
+    let mut tokens = tokens.into_iter().peekable();
+    let mut document = String::new();
+    while let Some(token) = tokens.next() {
+        if matches!(&token, proc_macro2::TokenTree::Punct(p) if p.as_char() == '#') {
+            if matches!(tokens.peek(), Some(proc_macro2::TokenTree::Punct(p)) if p.as_char() == '!')
+                && tokens.next().is_none()
+            {
+                return Err(PolicyError::Violation(String::from(
+                    "incomplete inner attribute",
+                )));
             }
-        } else if fenced && rust {
-            let line = match line.strip_prefix("# ") {
-                Some(hidden) => hidden,
-                None => line,
-            };
-            snippet.push_str(line);
-            snippet.push('\n');
+            if let Some(proc_macro2::TokenTree::Group(group)) = tokens.next()
+                && let Ok(syn::Meta::NameValue(meta)) = syn::parse2(group.stream())
+                && meta.path.is_ident("doc")
+            {
+                match meta.value {
+                    syn::Expr::Lit(syn::ExprLit {
+                        lit: syn::Lit::Str(text),
+                        ..
+                    }) => {
+                        document.push_str(&text.value());
+                        document.push('\n');
+                    }
+                    // Included files are checked independently by walk().
+                    syn::Expr::Macro(m) if m.mac.path.is_ident("include_str") => {}
+                    _ => {
+                        return Err(PolicyError::Violation(String::from(
+                            "unsupported generated documentation",
+                        )));
+                    }
+                }
+            }
+        } else {
+            check_markdown(&document)?;
+            document.clear();
+            if let proc_macro2::TokenTree::Group(group) = token {
+                check_documentation(group.stream())?;
+            }
         }
     }
-    if fenced && rust {
-        return Err(PolicyError::Violation(String::from(
-            "unterminated Rust documentation fence",
-        )));
+    check_markdown(&document)
+}
+
+fn check_markdown(source: &str) -> Result<(), PolicyError> {
+    use pulldown_cmark::{CodeBlockKind, Event, Parser, Tag, TagEnd};
+    let mut rust = false;
+    let mut snippet = String::new();
+    for event in Parser::new(source) {
+        match event {
+            Event::Start(Tag::CodeBlock(kind)) => {
+                rust = match &kind {
+                    CodeBlockKind::Indented => true,
+                    CodeBlockKind::Fenced(info) => {
+                        info.trim().is_empty()
+                            || info.split(',').any(|tag| {
+                                matches!(
+                                    tag.trim(),
+                                    "rust" | "no_run" | "compile_fail" | "should_panic" | "ignore"
+                                ) || tag.trim().starts_with("edition")
+                            })
+                    }
+                };
+                if let CodeBlockKind::Fenced(info) = &kind
+                    && info
+                        .split(',')
+                        .any(|tag| tag.trim().starts_with("ignore") || tag.trim() == "should_panic")
+                {
+                    return Err(PolicyError::Violation(String::from(
+                        "ignored or panicking documentation example",
+                    )));
+                }
+            }
+            Event::Text(text) if rust => snippet.push_str(&text),
+            Event::End(TagEnd::CodeBlock) if rust => {
+                let mut visible = String::new();
+                for line in snippet.lines() {
+                    let line = line.trim_start();
+                    let line = match line.strip_prefix("##") {
+                        Some(rest) => format!("#{rest}"),
+                        None => match line.strip_prefix("# ") {
+                            Some(rest) => String::from(rest),
+                            None if line == "#" => String::new(),
+                            None => String::from(line),
+                        },
+                    };
+                    visible.push_str(&line);
+                    visible.push('\n');
+                }
+                // Complete programs and snippets both occur in Rustdoc.
+                if syn::parse_file(&visible).is_ok() {
+                    check(&visible)?;
+                } else {
+                    check(&format!("fn documentation_example() {{\n{visible}\n}}"))?;
+                }
+                snippet.clear();
+                rust = false;
+            }
+            _ => {}
+        }
     }
     Ok(())
 }
@@ -310,6 +385,34 @@ mod tests {
         if check_markdown("```rust\nx.unwrap();\n```").is_ok() {
             return Err(PolicyError::Fixture("markdown unwrap"));
         }
+        for source in [
+            "/// ```\n/// x.unwrap();\n/// ```\nfn bad() {}",
+            "//! ```rust\n//! x.clone();\n//! ```\nfn bad() {}",
+            "/// A method.\n///\n///     x.unwrap();\nfn bad() {}",
+            "/// A method.\n///\n/// ~~~rust\n/// x.clone();\n/// ~~~\nfn bad() {}",
+            "enum Bad { /// ```rust\n/// panic!(\"bad\");\n/// ```\nValue }",
+            "/// ```rust\n/// # x.expect(\"bad\");\n/// ```\nfn bad() {}",
+        ] {
+            if check(source).is_ok() {
+                return Err(PolicyError::Fixture(source));
+            }
+        }
+        for markdown in [
+            "```\nx.unwrap();\n```",
+            "~~~rust\nx.clone();\n~~~",
+            "    x.unwrap();",
+            "```rust,ignore\nfn main() {}\n```",
+            "```rust\n##[derive(Clone)]\nstruct Bad;\n```",
+        ] {
+            if check_markdown(markdown).is_ok() {
+                return Err(PolicyError::Fixture(markdown));
+            }
+        }
+        check(
+            "/// ```\n/// # fn main() -> Result<(), std::io::Error> {\n/// # Ok(())\n/// # }\n/// ```\nfn good() {}",
+        )?;
+        check_markdown("~~~rust\nlet value = 1;\n~~~")?;
+        check_markdown("```text\nx.unwrap();\n```")?;
         check("fn good() -> Result<(), std::io::Error> { Ok(()) }")?;
         Ok(())
     }

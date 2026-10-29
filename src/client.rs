@@ -1,6 +1,10 @@
 use crate::{transport::*, *};
 use std::fmt;
 
+/// Endpoints, response bounds, and deadlines for one client.
+///
+/// Builders consume and return this configuration. They perform no requests.
+/// See [defaults and configuration examples](crate::guide::configuration).
 pub struct ClientConfig {
     api: Endpoint,
     toolbox: Endpoint,
@@ -11,6 +15,13 @@ pub struct ClientConfig {
     pub(crate) poll: PollInterval,
 }
 impl ClientConfig {
+    /// Builds configuration for the Daytona cloud API and toolbox.
+    ///
+    /// Defaults: 16 in-flight requests, 4 MiB JSON, 16 MiB files, a 60-second
+    /// HTTP deadline, and 250-millisecond polling.
+    ///
+    /// # Errors
+    /// Returns [`ValidationError`] if a built-in default cannot be validated.
     pub fn cloud() -> Result<Self, ValidationError> {
         Self::new(
             Endpoint::new("https://app.daytona.io/api/")?,
@@ -19,6 +30,13 @@ impl ClientConfig {
     }
     /// Toolbox is an explicitly trusted credential recipient. Provider-returned
     /// URLs never change this trust boundary; configure self-hosted endpoints here.
+    /// Builds configuration for explicit API and toolbox endpoints.
+    ///
+    /// The toolbox receives credentials, so select a trusted endpoint. Other defaults
+    /// match [`Self::cloud`]. See [configuration](crate::guide::configuration).
+    ///
+    /// # Errors
+    /// Returns [`ValidationError`] if a built-in resource limit cannot be validated.
     pub fn new(api: Endpoint, toolbox: Endpoint) -> Result<Self, ValidationError> {
         Ok(Self {
             api,
@@ -30,27 +48,41 @@ impl ClientConfig {
             poll: PollInterval::milliseconds(250)?,
         })
     }
+    /// Sets the in-flight HTTP limit. Default: 16.
+    ///
+    /// There is no waiting queue. Excess requests return [`TransportError::Busy`].
     pub fn concurrency(mut self, value: ConcurrencyLimit) -> Self {
         self.concurrency = value;
         self
     }
+    /// Sets the JSON response and shell-output capture limit in bytes. Default: 4 MiB.
     pub fn response_limit(mut self, value: ResponseLimit) -> Self {
         self.response = value;
         self
     }
+    /// Sets the in-memory file transfer limit in bytes. Default: 16 MiB.
     pub fn transfer_limit(mut self, value: TransferLimit) -> Self {
         self.transfer = value;
         self
     }
+    /// Sets the HTTP deadline, including the response body. Default: 60 seconds.
+    ///
+    /// Expiration does not prove that remote work stopped.
     pub fn request_timeout(mut self, value: RequestTimeout) -> Self {
         self.request_timeout = value;
         self
     }
+    /// Sets the delay between state observations. Default: 250 milliseconds.
     pub fn poll_interval(mut self, value: PollInterval) -> Self {
         self.poll = value;
         self
     }
 }
+/// Owns the HTTP connection pool and authentication credentials.
+///
+/// Create one client, then borrow it for sandbox operations. Handles cannot
+/// outlive this client. No environment variables are read implicitly.
+/// See [getting started](crate::guide::getting_started).
 pub struct Daytona {
     pub(crate) transport: Transport,
     api: Endpoint,
@@ -64,9 +96,24 @@ impl fmt::Debug for Daytona {
     }
 }
 impl Daytona {
+    /// Creates a client using cloud endpoints and default limits.
+    ///
+    /// Consumes credentials. No authentication request is made yet. Use the client
+    /// within a Tokio runtime. See [getting started](crate::guide::getting_started).
+    ///
+    /// # Errors
+    /// Returns [`ConfigurationError`] for invalid defaults, header encoding, or
+    /// HTTP transport initialization failure.
     pub fn new(credentials: Credentials) -> Result<Self, ConfigurationError> {
         Self::with_config(credentials, ClientConfig::cloud()?)
     }
+    /// Creates a client with explicit credentials and configuration.
+    ///
+    /// No API request is sent. See [configuration](crate::guide::configuration).
+    ///
+    /// # Errors
+    /// Returns [`ConfigurationError`] if credential headers or the transport cannot
+    /// be constructed.
     pub fn with_config(
         credentials: Credentials,
         config: ClientConfig,
@@ -84,9 +131,13 @@ impl Daytona {
             poll: config.poll,
         })
     }
+    /// Borrows this client to prepare a create request or temporary scope.
     pub fn sandboxes(&self) -> Sandboxes<'_> {
         Sandboxes { client: self }
     }
+    /// Moves a known ID into a handle borrowing this client.
+    ///
+    /// This performs no lookup. Call [`Sandbox::observe`] to inspect current state.
     pub fn sandbox(&self, id: SandboxId) -> Sandbox<'_> {
         Sandbox { client: self, id }
     }
@@ -234,29 +285,63 @@ impl SandboxControl for Daytona {
         }))
     }
 }
+/// A borrowed entry point for creating sandbox requests and scopes.
+///
+/// Obtained from [`Daytona::sandboxes`]. See [getting started](crate::guide::getting_started).
 pub struct Sandboxes<'client> {
     pub(crate) client: &'client Daytona,
 }
 impl<'client> Sandboxes<'client> {
+    /// Starts a local draft. Set a TTL, validate it, then submit it.
+    ///
+    /// See [manual lifecycle](crate::guide::lifecycle).
     pub fn create(&self) -> Create<Draft> {
         Create::draft()
     }
+    /// Starts a scope that owns its sandbox and handles normal-completion cleanup.
+    ///
+    /// Set a TTL before running work. See [getting started](crate::guide::getting_started).
     pub fn ephemeral(&self) -> Ephemeral<'client> {
         Ephemeral::new(self.client)
     }
 }
 #[derive(Debug)]
+/// An owned sandbox identity with a borrowed client.
+///
+/// The handle does not guarantee current remote state or access. Operations
+/// check those facts at runtime. Dropping a handle does not delete its sandbox.
+/// See [ownership](crate::guide::ownership) and [manual cleanup](crate::guide::lifecycle).
 pub struct Sandbox<'client> {
     pub(crate) client: &'client Daytona,
     pub(crate) id: SandboxId,
 }
 impl Sandbox<'_> {
+    /// Borrows the identity carried by this handle.
     pub fn id(&self) -> &SandboxId {
         &self.id
     }
+    /// Reads the current remote state without changing it.
+    ///
+    /// Returns `None` for HTTP 404. A returned observation may become stale.
+    /// Unknown or omitted states remain explicit.
+    ///
+    /// # Errors
+    /// Returns [`OperationError`] for transport, protocol, or access failures.
     pub async fn observe(&self) -> Result<Option<SandboxObservation>, OperationError> {
         self.client.observe(&self.id).await
     }
+    /// Consumes the handle, submits deletion, and waits for confirmed removal.
+    ///
+    /// Success requires HTTP 404 or an observed destroyed state. The total deadline
+    /// covers submission and polling. See [manual lifecycle](crate::guide::lifecycle).
+    ///
+    /// # Errors
+    /// Returns [`CleanupError`] with the sandbox ID and deletion acceptance when
+    /// removal cannot be confirmed.
+    ///
+    /// # Cancellation
+    /// Dropping this future can lose the local handle while remote deletion is
+    /// unresolved. Persist its identity before awaiting when recovery is required.
     pub async fn delete(self, timeout: WaitTimeout) -> Result<DeletionConfirmed, CleanupError> {
         let Sandbox { client, id } = self;
         let url = match client.api_url(&format!("sandbox/{}", id.as_str())) {
@@ -352,10 +437,14 @@ impl Sandbox<'_> {
     }
 }
 #[derive(Debug)]
+/// Evidence that absence or the destroyed state was observed.
+///
+/// A successful DELETE response alone is not enough. Returned by [`Sandbox::delete`].
 pub struct DeletionConfirmed {
     id: SandboxId,
 }
 impl DeletionConfirmed {
+    /// Borrows the identity whose removal was confirmed.
     pub fn sandbox_id(&self) -> &SandboxId {
         &self.id
     }
