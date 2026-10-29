@@ -53,6 +53,9 @@ async fn main() -> Result<std::process::ExitCode, std::io::Error> {
         Err(error) => {
             writeln!(std::io::stderr().lock(), "{error}")?;
             if let ExampleError::Scope(scope) = &error {
+                if let ScopeError::Setup(setup) = scope {
+                    writeln!(std::io::stderr().lock(), "Setup: {}", setup.cause)?;
+                }
                 if let Some(work) = scope.work_error() {
                     writeln!(std::io::stderr().lock(), "Work: {work}")?;
                 }

@@ -1139,3 +1139,38 @@ async fn upload_and_download_share_the_transfer_limit_error() -> Result<(), Test
     )?;
     server.finish().await
 }
+
+#[tokio::test]
+async fn explicit_budget_does_not_bypass_client_cap() -> Result<(), TestError> {
+    let server = Server::start(vec![Step {
+        path: "POST /toolbox/sb-1/process/execute ",
+        contains: Vec::new(),
+        reply: Reply::StallBody(std::time::Duration::from_millis(1100)),
+    }])
+    .await?;
+    let client = Daytona::with_config(
+        Credentials::ApiKey(ApiKey::new("test-secret")?),
+        server
+            .config()?
+            .request_timeout(RequestTimeout::seconds(1)?),
+    )?;
+    let sandbox = client.sandbox(SandboxId::new("sb-1")?);
+    let result = sandbox
+        .shell(ShellScript::new("work")?)
+        .budget(CommandBudget::new(
+            ExecutionTimeout::seconds(2)?,
+            RequestTimeout::seconds(3)?,
+        ))
+        .output()
+        .await;
+    require(
+        matches!(
+            result,
+            Err(ExecutionError::Operation(OperationError::Transport(
+                TransportError::Timeout
+            )))
+        ),
+        "budget cannot bypass outer cap",
+    )?;
+    server.finish().await
+}

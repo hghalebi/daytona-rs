@@ -111,8 +111,7 @@ impl PreparedJob<'_> {
         }
     }
 }
-#[tokio::main]
-async fn main() -> Result<(), ExampleError> {
+async fn run() -> Result<(), ExampleError> {
     if !std::env::args().any(|arg| arg == "--run-live") {
         return Err(ExampleError::Consent);
     }
@@ -151,4 +150,18 @@ async fn main() -> Result<(), ExampleError> {
         (Err(error), Ok(())) | (Ok(()), Err(error)) => return Err(error),
     }
     Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<std::process::ExitCode, std::io::Error> {
+    match run().await {
+        Ok(()) => Ok(std::process::ExitCode::SUCCESS),
+        Err(error) => {
+            writeln!(std::io::stderr().lock(), "{error}")?;
+            // SDK and example diagnostics redact transcripts and credentials.
+            // Debug retains all branches of aggregate errors for recovery.
+            writeln!(std::io::stderr().lock(), "Details: {error:?}")?;
+            Ok(std::process::ExitCode::FAILURE)
+        }
+    }
 }

@@ -171,8 +171,7 @@ async fn generate(
     Ok(())
 }
 
-#[tokio::main]
-async fn main() -> Result<(), ExampleError> {
+async fn run() -> Result<(), ExampleError> {
     if !std::env::args().any(|argument| argument == "--run-live") {
         return Err(ExampleError::ConsentRequired);
     }
@@ -248,11 +247,18 @@ mod tests {
             std::fs::create_dir_all(root.join("tool/node_modules/.bin"))?;
             let result = (|| -> Result<(), TestError> {
                 std::fs::write(root.join("auth/auth.json"), "synthetic")?;
-                executable(
-                    &root.join("tool/node_modules/.bin/pi"),
-                    &format!("#!/bin/sh\nexit {work}\n"),
-                )?;
-                executable(&root.join("bin/timeout"), "#!/bin/sh\nshift\nexec \"$@\"\n")?;
+                let fake_pi = if work == 124 {
+                    String::from("#!/bin/sh\nexec sleep 30\n")
+                } else {
+                    format!("#!/bin/sh\nexit {work}\n")
+                };
+                executable(&root.join("tool/node_modules/.bin/pi"), &fake_pi)?;
+                let fake_timeout = if work == 124 {
+                    "#!/bin/sh\nshift\n\"$@\" &\npid=$!\nsleep 0.05\nkill -TERM \"$pid\"\nif wait \"$pid\"; then exit 0; else exit 124; fi\n"
+                } else {
+                    "#!/bin/sh\nshift\nexec \"$@\"\n"
+                };
+                executable(&root.join("bin/timeout"), fake_timeout)?;
                 if removal != 0 {
                     executable(
                         &root.join("bin/rm"),
@@ -293,5 +299,19 @@ mod tests {
             return Err(TestError::Contract);
         }
         Ok(())
+    }
+}
+
+#[tokio::main]
+async fn main() -> Result<std::process::ExitCode, std::io::Error> {
+    match run().await {
+        Ok(()) => Ok(std::process::ExitCode::SUCCESS),
+        Err(error) => {
+            writeln!(std::io::stderr().lock(), "{error}")?;
+            // SDK and example diagnostics redact transcripts and credentials.
+            // Debug retains all branches of aggregate errors for recovery.
+            writeln!(std::io::stderr().lock(), "Details: {error:?}")?;
+            Ok(std::process::ExitCode::FAILURE)
+        }
     }
 }

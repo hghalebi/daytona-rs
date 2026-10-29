@@ -22,7 +22,7 @@ In a new application, add:
 
 ```toml
 [dependencies]
-daytona = { package = "daytona-rs", version = "0.1.2" }
+daytona = { package = "daytona-rs", version = "0.2.0" }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
@@ -49,7 +49,7 @@ The checkout command below runs the same canonical example.
 cargo run --example first_command -- --run-live
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.1.2/source/examples/first_command.rs)
+The [complete source](https://docs.rs/crate/daytona-rs/0.2.0/source/examples/first_command.rs)
 is shipped with the crate and included below.
 
 ## Complete example

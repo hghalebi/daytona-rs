@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.0 — 2026-10-29
+
+- Added configured scoped execution through `ephemeral_from(Create<Validated>)`.
+  It preserves the original reference, source, resources, and lifecycle/network
+  policies while using the same readiness and cleanup path.
+- Added `CommandBudget` for independent provider execution and HTTP wait limits.
+  Existing execution_timeout behavior and the outer client cap remain intact.
+- Added opt-in bounded lifecycle waiting within the existing active HTTP cap.
+  Pending operations and waiting time are bounded; default admission is fail-fast.
+- Added `ExecutionError::output`, `Sandbox::into_id`, and complete cleanup-error
+  decomposition. Error output remains redacted unless explicitly accessed.
+- Added deletion evidence for unsent and rejected attempts. DELETE authentication
+  and authorization errors now use provider rejection variants. Download size
+  failures now match upload failures as `TransferError::Limit`. These changes
+  require updates to exhaustive matches: see [migration](docs/migration-0.2.md).
+- Reworked first-use diagnostics and report/recovery lessons. Added configured
+  scopes, long commands, deliberate failure inspection, and bounded agent jobs.
+  Versioned recovery records reject unsupported schemas and mismatched context.
+- Pi attempts credential removal on ordinary failure as well as success, retaining
+  both statuses. Cooperative timeout and combined failures are tested locally.
+- Fresh live checks passed Pi generation, independent artifact execution, download,
+  and deletion readback; two bounded jobs and the broad SDK smoke test also passed.
+- Corrected timeout explanations and validation diagnostics without rejecting
+  valid multiline scripts. Rust 1.98.0 remains the minimum. No SonarCloud added.
+
 ## 0.1.2 — 2026-10-29
 
 - Added a complete Pi coding-agent example and Rustdoc lesson. It creates a
