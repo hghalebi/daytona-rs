@@ -17,7 +17,7 @@ filename varies. The live smoke example stores a reference in its receipt direct
 cargo run --example recover_creation -- .plan/manual-YOUR_OPERATION_ID.json
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.1.1/source/examples/recover_creation.rs)
+The [complete source](https://docs.rs/crate/daytona-rs/0.1.2/source/examples/recover_creation.rs)
 is shipped with the crate and included below.
 
 ## Complete example

@@ -14,7 +14,7 @@ without forcing a remote deletion failure. Pass a real `run_report` result to
 cargo run --example preserve_work
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.1.1/source/examples/preserve_work.rs)
+The [complete source](https://docs.rs/crate/daytona-rs/0.1.2/source/examples/preserve_work.rs)
 is shipped with the crate and included below.
 
 ## Complete example

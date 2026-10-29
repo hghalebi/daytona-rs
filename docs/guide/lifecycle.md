@@ -21,7 +21,7 @@ Each arrow changes local knowledge or ownership. Remote state can still change.
 cargo run --example manual_lifecycle -- --run-live
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.1.1/source/examples/manual_lifecycle.rs)
+The [complete source](https://docs.rs/crate/daytona-rs/0.1.2/source/examples/manual_lifecycle.rs)
 is shipped with the crate and included below.
 
 ## Complete example

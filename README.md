@@ -17,7 +17,7 @@ Requires **Rust 1.98.0** and a Tokio runtime.
 
 ```toml
 [dependencies]
-daytona = { package = "daytona-rs", version = "0.1.1" }
+daytona = { package = "daytona-rs", version = "0.1.2" }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
@@ -56,6 +56,7 @@ in CI. To learn without a key, start with `cargo run --example validate_inputs`.
 | Validate inputs | [Input lesson](https://docs.rs/daytona-rs/latest/daytona/guide/inputs/) |
 | Configure limits | [Configuration](https://docs.rs/daytona-rs/latest/daytona/guide/configuration/) |
 | Inspect command failures | [Command results](https://docs.rs/daytona-rs/latest/daytona/guide/commands/) |
+| Generate code with Pi, run it, and delete the sandbox | [Coding agent](https://docs.rs/daytona-rs/latest/daytona/guide/pi_task/) |
 | Upload or download | [Files](https://docs.rs/daytona-rs/latest/daytona/guide/files/) |
 | Keep output after cleanup failure | [Error handling](https://docs.rs/daytona-rs/latest/daytona/guide/errors/) |
 | Manage a sandbox explicitly | [Lifecycle](https://docs.rs/daytona-rs/latest/daytona/guide/lifecycle/) |

@@ -29,6 +29,13 @@ pub mod getting_started {}
 #[doc = include_str!("../docs/guide/commands-notes.md")]
 pub mod commands {}
 
+#[doc = include_str!("../docs/guide/pi_task.md")]
+#[doc = "\n```rust,no_run\n"]
+#[doc = include_str!("../examples/pi_task.rs")]
+#[doc = "\n```\n"]
+#[doc = include_str!("../docs/guide/pi_task-notes.md")]
+pub mod pi_task {}
+
 #[doc = include_str!("../docs/guide/lifecycle.md")]
 #[doc = "\n```rust,no_run\n"]
 #[doc = include_str!("../examples/manual_lifecycle.rs")]

@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.2 — 2026-10-29
+
+- Added a complete Pi coding-agent example and Rustdoc lesson. It creates a
+  temporary sandbox, installs Pi 1.4.0, generates a Python file through an
+  authenticated OpenAI Codex model, checks execution, downloads the source, and
+  confirms deletion through both scoped cleanup and a separate observation.
+- The example exports only one model credential, keeps it out of command text
+  and diagnostics, saves a creation reference before submission, and bounds
+  installation and execution time. Ordinary CI does not use model credentials.
+- The workflow was tested live before being added to examples. Earlier failed
+  Mistral attempts also confirmed deletion. Model access remains account-specific.
+- SDK runtime behavior and dependency requirements are unchanged.
+
 ## 0.1.1 — 2026-10-29
 
 - Added complete Rustdoc for the public API, including units, ownership, errors,
