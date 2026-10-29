@@ -34,17 +34,18 @@ enum ExampleError {
     Contract,
 }
 
-fn handle(
-    report: ScopeReport<String, WorkError>,
+fn handle<T>(
+    report: ScopeReport<T, WorkError>,
     destination: &mut impl Write,
+    text: impl Fn(&T) -> &str,
 ) -> Result<(), ExampleError> {
     match report {
         ScopeReport::Success(output) => {
-            destination.write_all(output.as_bytes())?;
+            destination.write_all(text(&output).as_bytes())?;
             Ok(())
         }
         ScopeReport::CleanupFailed { output, cleanup } => {
-            match destination.write_all(output.as_bytes()) {
+            match destination.write_all(text(&output).as_bytes()) {
                 Ok(()) => Err(ScopeError::Cleanup(cleanup).into()),
                 Err(output) => Err(ExampleError::OutputAndCleanup { output, cleanup }),
             }
@@ -74,7 +75,7 @@ fn simulate() -> Result<(), ExampleError> {
     ];
     for (index, report) in reports.into_iter().enumerate() {
         let mut saved = Vec::new();
-        let result = handle(report, &mut saved);
+        let result = handle(report, &mut saved, String::as_str);
         let correct = match (index, result) {
             (0, Ok(())) | (2, Err(ExampleError::Scope(ScopeError::Cleanup(_)))) => {
                 saved == b"saved work"
@@ -117,10 +118,10 @@ async fn main() -> Result<(), ExampleError> {
             )
             .await
             .map_err(|_| WorkError::Deadline)??;
-            Ok::<String, WorkError>(String::from(result.text()))
+            Ok::<CheckedOutput, WorkError>(result)
         })
         .await?;
-    handle(report, &mut std::io::stdout().lock())
+    handle(report, &mut std::io::stdout().lock(), CheckedOutput::text)
 }
 
 #[cfg(test)]
@@ -142,7 +143,7 @@ mod tests {
             output: String::from("useful"),
             cleanup: simulated_cleanup()?,
         };
-        match handle(report, &mut FailedWriter) {
+        match handle(report, &mut FailedWriter, String::as_str) {
             Err(ExampleError::OutputAndCleanup { cleanup, .. })
                 if cleanup.sandbox_id().as_str() == "local-simulation" =>
             {
