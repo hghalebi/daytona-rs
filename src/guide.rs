@@ -95,3 +95,9 @@ pub mod ownership {
 
 #[doc = include_str!("../docs/guide/troubleshooting.md")]
 pub mod troubleshooting {}
+
+#[doc = include_str!("../docs/guide/configured_scope.md")]
+#[doc = "\n```rust,no_run\n"]
+#[doc = include_str!("../examples/configured_scope.rs")]
+#[doc = "\n```\n"]
+pub mod configured_scope {}

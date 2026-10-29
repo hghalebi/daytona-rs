@@ -2,8 +2,6 @@ use crate::*;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-/// Persist this value before submission for recovery after cancellation. It is
-/// correlation data, not proof of acknowledgement or permission to replay.
 #[derive(Serialize, Deserialize)]
 /// Persistable correlation data for a creation attempt.
 ///
@@ -215,9 +213,21 @@ impl RawCreate {
     }
 }
 impl Create<Validated> {
-    pub(crate) fn with_reference(mut self, reference: CreationReference) -> Self {
-        self.state.specification.reference = reference;
-        self
+    pub(crate) fn scoped(ttl: SandboxTtl, reference: CreationReference) -> Self {
+        Self {
+            state: Validated {
+                specification: CreateSpec {
+                    reference,
+                    ttl,
+                    name: None,
+                    source: SandboxSource::Default,
+                    resources: None,
+                    network: NetworkPolicy::ProviderDefault,
+                    idle: None,
+                    stopped: None,
+                },
+            },
+        }
     }
     /// Borrows the validated specification without submitting it.
     pub fn specification(&self) -> &CreateSpec {

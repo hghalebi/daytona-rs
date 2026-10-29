@@ -112,3 +112,31 @@ fn keep_identity(client: &Daytona, id: SandboxId) -> SandboxId {
     client.sandbox(id).into_id()
 }
 ```
+
+## Configured scopes require validated, owned intent
+
+```compile_fail,E0308
+use daytona::{Create, Daytona};
+fn invalid(client: &Daytona) {
+    let scope = client.sandboxes().ephemeral_from(Create::draft());
+    drop(scope);
+}
+```
+
+```compile_fail,E0382
+use daytona::{Create, Daytona, Validated};
+fn invalid(client: &Daytona, request: Create<Validated>) {
+    let scope = client.sandboxes().ephemeral_from(request);
+    drop(request);
+    drop(scope);
+}
+```
+
+```no_run
+use daytona::{Create, Daytona, Validated};
+fn valid(client: &Daytona, request: Create<Validated>) {
+    let scope = client.sandboxes().ephemeral_from(request);
+    let reference = scope.reference();
+    let _operation = reference.operation();
+}
+```

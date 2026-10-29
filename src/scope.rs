@@ -2,10 +2,12 @@ use crate::*;
 use std::{error::Error, ops::AsyncFnOnce};
 
 /// A scope that still requires a positive lifetime before execution.
-pub struct NeedsTtl;
+pub struct NeedsTtl {
+    reference: CreationReference,
+}
 /// A scope with a validated lifetime and an available run operation.
 pub struct HasTtl {
-    ttl: SandboxTtl,
+    request: Create<Validated>,
 }
 /// A temporary-sandbox scope that owns cleanup on normal completion.
 ///
@@ -13,7 +15,6 @@ pub struct HasTtl {
 /// is dropped or user code panics. See [getting started](crate::guide::getting_started).
 pub struct Ephemeral<'client, State = NeedsTtl> {
     client: &'client Daytona,
-    reference: CreationReference,
     state: State,
     readiness: Option<WaitTimeout>,
     cleanup: Option<WaitTimeout>,
@@ -22,8 +23,9 @@ impl<'client> Ephemeral<'client> {
     pub(crate) fn new(client: &'client Daytona) -> Self {
         Self {
             client,
-            reference: CreationReference::generate(),
-            state: NeedsTtl,
+            state: NeedsTtl {
+                reference: CreationReference::generate(),
+            },
             readiness: None,
             cleanup: None,
         }
@@ -34,18 +36,21 @@ impl<'client> Ephemeral<'client> {
     pub fn ttl(self, ttl: SandboxTtl) -> Ephemeral<'client, HasTtl> {
         Ephemeral {
             client: self.client,
-            reference: self.reference,
-            state: HasTtl { ttl },
+            state: HasTtl {
+                request: Create::scoped(ttl, self.state.reference),
+            },
             readiness: self.readiness,
             cleanup: self.cleanup,
         }
     }
 }
-impl<State> Ephemeral<'_, State> {
-    /// Borrows the creation reference. Persist it before running for cancellation recovery.
+impl Ephemeral<'_, NeedsTtl> {
+    /// Borrows correlation data to persist before execution.
     pub fn reference(&self) -> &CreationReference {
-        &self.reference
+        &self.state.reference
     }
+}
+impl<State> Ephemeral<'_, State> {
     /// Sets the total readiness deadline. Default: 60 seconds.
     pub fn readiness_timeout(mut self, timeout: WaitTimeout) -> Self {
         self.readiness = Some(timeout);
@@ -174,6 +179,19 @@ impl<T, E: Error + 'static> ScopeReport<T, E> {
     }
 }
 impl<'client> Ephemeral<'client, HasTtl> {
+    pub(crate) fn from_request(client: &'client Daytona, request: Create<Validated>) -> Self {
+        Self {
+            client,
+            state: HasTtl { request },
+            readiness: None,
+            cleanup: None,
+        }
+    }
+    /// Borrows the exact validated request's reference. Persist it before execution.
+    pub fn reference(&self) -> &CreationReference {
+        self.state.request.reference()
+    }
+
     /// Creates a sandbox, lends it to work, then confirms deletion.
     ///
     /// Returned data must own what it needs after the scope ends. Use
@@ -217,11 +235,7 @@ impl<'client> Ephemeral<'client, HasTtl> {
                 Some(t) => t,
                 None => WaitTimeout::seconds(30)?,
             };
-            let request = Create::draft()
-                .ttl(self.state.ttl)
-                .validate()?
-                .with_reference(self.reference);
-            let receipt = request.submit(self.client).await?;
+            let receipt = self.state.request.submit(self.client).await?;
             Ok::<_, SetupError>((receipt, readiness, cleanup))
         }
         .await;

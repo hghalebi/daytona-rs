@@ -196,7 +196,7 @@ async fn disconnect_and_malformed_acknowledgement_reconcile_without_replay() -> 
             },
             Step {
                 path: "GET /api/sandbox?",
-                contains: vec!["limit=2"],
+                contains: vec![String::from("limit=2")],
                 reply: Reply::Correlated,
             },
         ])
@@ -837,4 +837,86 @@ async fn callback_deadline_returns_to_scope_for_cleanup() -> Result<(), TestErro
         "callback deadline confirms cleanup",
     )?;
     server.finish().await
+}
+
+#[tokio::test]
+async fn configured_scopes_preserve_intent_and_all_cleanup_outcomes() -> Result<(), TestError> {
+    for (work_succeeds, cleanup_succeeds, ready) in [
+        (true, true, true),
+        (false, true, true),
+        (true, false, true),
+        (false, false, true),
+        (true, true, false),
+    ] {
+        let request = Create::draft()
+            .ttl(SandboxTtl::minutes(10)?)
+            .name(SandboxName::new("configured")?)
+            .source(SandboxSource::Snapshot(SnapshotRef::new("snapshot-a")?))
+            .resources(Resources::new(
+                CpuAllocation::cores(2)?,
+                MemorySize::gigabytes(4)?,
+                DiskSize::gigabytes(8)?,
+            ))
+            .network(NetworkPolicy::BlockAll)
+            .idle_timeout(IdleDuration::minutes(3)?)
+            .delete_after_stop(StoppedDuration::minutes(2)?)
+            .validate()?;
+        let saved = serde_json::to_string(request.reference())?;
+        let mut create = create_step();
+        create.contains = vec![serde_json::to_string(request.reference().operation())?];
+        for field in [
+            "\"name\":\"configured\"",
+            "\"snapshot\":\"snapshot-a\"",
+            "\"cpu\":2",
+            "\"memory\":4",
+            "\"disk\":8",
+            "\"networkBlockAll\":true",
+            "\"autoStopInterval\":3",
+            "\"autoDeleteInterval\":2",
+            "\"ttlMinutes\":10",
+        ] {
+            create.contains.push(String::from(field));
+        }
+        let mut steps = vec![
+            create,
+            if ready {
+                ready_step()
+            } else {
+                Step::json(
+                    "GET /api/sandbox/sb-1 ",
+                    200,
+                    r#"{"id":"sb-1","state":"stopped"}"#,
+                )
+            },
+        ];
+        if ready {
+            steps.push(execute_step(if work_succeeds {
+                SUCCESS
+            } else {
+                r#"{"result":"failure","exitCode":7}"#
+            }));
+        }
+        steps.push(delete_step(if cleanup_succeeds { 200 } else { 500 }));
+        if cleanup_succeeds {
+            steps.push(absent_step());
+        }
+        let server = Server::start(steps).await?;
+        let client = server.client()?;
+        let scope = client.sandboxes().ephemeral_from(request);
+        require(
+            serde_json::to_string(scope.reference())? == saved,
+            "exact reference preserved",
+        )?;
+        let result = scope.run(async |sandbox| shell(sandbox).await).await;
+        let valid = match result {
+            Ok(_) => ready && work_succeeds && cleanup_succeeds,
+            Err(ScopeError::Work(_)) => ready && !work_succeeds && cleanup_succeeds,
+            Err(ScopeError::Cleanup(_)) => ready && work_succeeds && !cleanup_succeeds,
+            Err(ScopeError::Both { .. }) => ready && !work_succeeds && !cleanup_succeeds,
+            Err(ScopeError::Setup(error)) => !ready && error.cleanup.is_none(),
+        };
+        require(valid, "configured lifecycle outcome")?;
+        server.finish().await?;
+    }
+    Ok(())
 }

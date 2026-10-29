@@ -290,6 +290,15 @@ pub struct Sandboxes<'client> {
     pub(crate) client: &'client Daytona,
 }
 impl<'client> Sandboxes<'client> {
+    /// Moves a validated request into the normal scoped cleanup workflow.
+    ///
+    /// Preserves its source, policies, and exact recovery reference. No request
+    /// is sent until run or run_report is awaited. See the
+    /// [configured scope lesson](crate::guide::configured_scope).
+    pub fn ephemeral_from(&self, request: Create<Validated>) -> Ephemeral<'client, HasTtl> {
+        Ephemeral::from_request(self.client, request)
+    }
+
     /// Starts a local draft. Set a TTL, validate it, then submit it.
     ///
     /// See [manual lifecycle](crate::guide::lifecycle).

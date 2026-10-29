@@ -54,7 +54,7 @@ pub enum Reply {
 }
 pub struct Step {
     pub path: &'static str,
-    pub contains: Vec<&'static str>,
+    pub contains: Vec<String>,
     pub reply: Reply,
 }
 impl Step {
@@ -66,7 +66,7 @@ impl Step {
         }
     }
     pub fn containing(mut self, fragments: Vec<&'static str>) -> Self {
-        self.contains = fragments;
+        self.contains = fragments.into_iter().map(String::from).collect();
         self
     }
 }
@@ -135,7 +135,7 @@ impl Server {
                     "auth header",
                 )?;
                 for fragment in step.contains {
-                    require(request.contains(fragment), "wire field")?;
+                    require(request.contains(&fragment), "wire field")?;
                 }
                 match step.reply {
                     Reply::Disconnect => {}
