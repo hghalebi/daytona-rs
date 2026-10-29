@@ -6,9 +6,10 @@ succeeds. Keep those outcomes separate when choosing the next action.
 | Scope result | What happened | What you retain |
 | --- | --- | --- |
 | Success | Work and cleanup succeeded | Owned output |
+| `ScopeError::Preparation` | Local input failed; no request sent | Owned input, cause and creation reference |
 | `ScopeError::Setup` | Work never began | Setup cause and any cleanup failure |
 | `ScopeError::Work` | Work failed; cleanup confirmed | Work error |
-| `ScopeError::Cleanup` | Work succeeded; cleanup unconfirmed | Cleanup identity and evidence |
+| `ScopeError::Cleanup` | Work succeeded; cleanup unconfirmed | Successful output, cleanup identity and evidence |
 | `ScopeError::Both` | Work and cleanup failed | Both errors |
 
 Use `work_error()` and `cleanup_error()` to inspect both branches. The standard
@@ -16,8 +17,10 @@ Use `work_error()` and `cleanup_error()` to inspect both branches. The standard
 
 ## Keep successful work
 
-`run` returns an error and discards output when cleanup fails. `run_report` keeps
-that output in [`ScopeReport::CleanupFailed`](crate::ScopeReport::CleanupFailed).
+Both direct awaiting and report() preserve successful output. A direct-await
+failure stores it in ScopeError::Cleanup; successful_output() borrows it and
+matching the variant moves it out. report() returns ScopeReport::CleanupFailed
+when you prefer to handle work and cleanup as separate data.
 See the complete [preserve-work handler](crate::guide::errors::preserve_work).
 
 ## Recover cleanup
@@ -34,7 +37,7 @@ cleanup. A TTL remains a provider fallback rather than observed evidence.
 ## Inspect command output
 
 ExecutionError::output borrows retained output from either exit-related failure.
-It returns None for transport/protocol failures. Default diagnostics stay redacted.
+It returns None for preparation and transport/protocol failures. Default diagnostics stay redacted.
 The [complete diagnostic example](crate::guide::errors::diagnose_failure) shows
 both scope error branches and an explicit `--show-output` option.
 

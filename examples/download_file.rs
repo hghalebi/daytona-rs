@@ -20,7 +20,7 @@ enum ExampleError {
     #[error(transparent)]
     Configuration(#[from] ConfigurationError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<WorkError>),
+    Scope(#[from] ScopeError<TransferReceipt, WorkError>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -35,14 +35,12 @@ async fn main() -> Result<(), ExampleError> {
     let local = LocalDestinationPath::new("lesson-output.txt")?;
     let script = ShellScript::new("printf 'hello\\n' > /tmp/daytona-lesson.txt")?;
     let receipt = client
-        .sandboxes()
-        .ephemeral()
-        .ttl(SandboxTtl::minutes(5)?)
-        .run(async move |sandbox| {
+        .scope(async move |sandbox| {
             // Prepare a known remote file so this lesson works by itself.
-            sandbox.shell(script).checked_output().await?;
+            sandbox.run(script).await?;
             Ok::<_, WorkError>(sandbox.download(&remote, &local).await?)
         })
+        .ttl(SandboxTtl::minutes(5)?)
         .await?;
     writeln!(
         std::io::stdout().lock(),

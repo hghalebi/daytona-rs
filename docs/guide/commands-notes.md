@@ -5,7 +5,7 @@ Handled exit code 7; sandbox deleted
 ```
 
 This example uses `output()` because exit code 7 is expected data. It checks the
-optional code after cleanup. Use `checked_output()` when the command must report
+optional code after cleanup. Await sandbox.run(script) directly when the command must report
 zero; a nonzero or missing code then becomes an error retaining the output.
 
 | Result | Meaning | Next step |
@@ -15,7 +15,7 @@ zero; a nonzero or missing code then becomes an error retaining the output.
 | `MissingExitStatus` | Provider omitted the status | Keep the result unknown |
 | `Operation` | Transport, protocol, or access failure | Inspect the cause and remote uncertainty |
 
-Use [`Shell::output`](crate::Shell::output) when all exit codes are ordinary data
+Use [`Command::output`](crate::Command::output) when all exit codes are ordinary data
 for your application. Then inspect the optional code yourself. Never treat `None`
 as zero. Debug redacts text; `text()` exposes it deliberately.
 

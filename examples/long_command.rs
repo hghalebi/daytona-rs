@@ -1,6 +1,7 @@
 use daytona::{
-    ApiKey, ClientConfig, CommandBudget, ConfigurationError, Credentials, Daytona, ExecutionError,
-    ExecutionTimeout, RequestTimeout, SandboxTtl, ScopeError, ShellScript, ValidationError,
+    ApiKey, CheckedOutput, ClientConfig, CommandBudget, ConfigurationError, Credentials, Daytona,
+    ExecutionError, ExecutionTimeout, RequestTimeout, SandboxTtl, ScopeError, ShellScript,
+    ValidationError,
 };
 use std::io::Write;
 use thiserror::Error;
@@ -16,7 +17,7 @@ enum ExampleError {
     #[error(transparent)]
     Configuration(#[from] ConfigurationError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<ExecutionError>),
+    Scope(#[from] ScopeError<CheckedOutput, ExecutionError>),
     #[error(transparent)]
     Output(#[from] std::io::Error),
 }
@@ -35,10 +36,8 @@ async fn run() -> Result<(), ExampleError> {
 
     // The scope owns the sandbox. Your callback borrows it until work ends.
     let output = client
-        .sandboxes()
-        .ephemeral()
+        .scope(async move |sandbox| sandbox.run(script).budget(budget).await)
         .ttl(SandboxTtl::minutes(5)?)
-        .run(async move |sandbox| sandbox.shell(script).budget(budget).checked_output().await)
         .await?;
 
     // The output owns its text. The sandbox has already been deleted.

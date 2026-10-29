@@ -1,5 +1,8 @@
 # Migrate from 0.1 to 0.2
 
+Historical guide for 0.1 to 0.2. For the current API, use the
+[0.3 migration guide](migration-0.3.md).
+
 The common scoped workflow is unchanged. Version 0.2 adds configured scopes,
 independent command budgets, and explicit lifecycle admission. Update exhaustive
 error matches for the new evidence below.

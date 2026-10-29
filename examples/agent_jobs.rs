@@ -12,6 +12,8 @@ enum JobError {
 }
 #[derive(Debug, Error)]
 enum ExampleError {
+    #[error(transparent)]
+    Create(#[from] CreateValidationError),
     #[error("pass --run-live to create two billable sandboxes")]
     Consent,
     #[error(transparent)]
@@ -27,7 +29,7 @@ enum ExampleError {
     #[error(transparent)]
     Setup(#[from] ScopeSetupError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<JobError>),
+    Scope(#[from] ScopeError<CheckedOutput, JobError>),
     #[error("saving output and cleanup both failed")]
     SaveAndCleanup {
         #[source]
@@ -49,26 +51,24 @@ struct Supervisor {
     client: Daytona,
 }
 struct PreparedJob<'client> {
-    scope: Ephemeral<'client, HasTtl>,
+    client: &'client Daytona,
+    request: Create<Validated>,
     job: Job,
     artifact: PathBuf,
 }
 impl Supervisor {
     // Preparation finishes before either cancellable job future starts.
     fn prepare(&self, job: Job) -> Result<PreparedJob<'_>, ExampleError> {
-        let scope = self
-            .client
-            .sandboxes()
-            .ephemeral()
-            .ttl(SandboxTtl::minutes(5)?);
-        let directory =
-            PathBuf::from(".plan").join(format!("job-{}", scope.reference().operation().as_str()));
+        let request = Create::draft().ttl(SandboxTtl::minutes(5)?).validate()?;
+        let directory = PathBuf::from(".plan")
+            .join(format!("job-{}", request.reference().operation().as_str()));
         std::fs::create_dir_all(&directory)?;
         let mut file = std::fs::File::create_new(directory.join("creation-reference.json"))?;
-        serde_json::to_writer(&mut file, scope.reference())?;
+        serde_json::to_writer(&mut file, request.reference())?;
         file.sync_all()?;
         Ok(PreparedJob {
-            scope,
+            client: &self.client,
+            request,
             job,
             artifact: directory.join("result.txt"),
         })
@@ -78,19 +78,17 @@ impl PreparedJob<'_> {
     async fn run(self) -> Result<(), ExampleError> {
         let job = self.job;
         let report = self
-            .scope
-            .run_report(async move |sandbox| {
+            .client
+            .scope_from(self.request, async move |sandbox| {
                 tokio::time::timeout(
                     std::time::Duration::from_secs(45),
-                    sandbox
-                        .shell(job.script)
-                        .budget(job.budget)
-                        .checked_output(),
+                    sandbox.run(job.script).budget(job.budget),
                 )
                 .await
                 .map_err(|_| JobError::Deadline)?
                 .map_err(JobError::from)
             })
+            .report()
             .await?;
         // Output owns its data. Save it even if deletion was not confirmed.
         match report {
@@ -100,7 +98,7 @@ impl PreparedJob<'_> {
             }
             ScopeReport::CleanupFailed { output, cleanup } => {
                 match std::fs::write(self.artifact, output.text()) {
-                    Ok(()) => Err(ScopeError::Cleanup(cleanup).into()),
+                    Ok(()) => Err(ScopeError::Cleanup { output, cleanup }.into()),
                     Err(save) => Err(ExampleError::SaveAndCleanup { save, cleanup }),
                 }
             }

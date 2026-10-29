@@ -59,3 +59,20 @@ jobs:
           cargo test --manifest-path "${package_dir}/Cargo.toml" --all-targets --locked
           cargo test --manifest-path "${package_dir}/Cargo.toml" --doc --locked
           RUSTDOCFLAGS='-D warnings' cargo doc --manifest-path "${package_dir}/Cargo.toml" --no-deps --locked
+
+      - name: Verify exported macros with a renamed external dependency
+        shell: bash
+        run: |
+          consumer_dir=$(mktemp -d)
+          mkdir -p "$consumer_dir/src"
+          cp tests/consumer/fixture.rs "$consumer_dir/src/main.rs"
+          cat > "$consumer_dir/Cargo.toml" <<EOF
+          [package]
+          name = "daytona-consumer"
+          version = "0.0.0"
+          edition = "2024"
+          [dependencies]
+          sdk = { package = "daytona-rs", path = "$GITHUB_WORKSPACE" }
+          thiserror = "2"
+          EOF
+          cargo run --manifest-path "$consumer_dir/Cargo.toml"

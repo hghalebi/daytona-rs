@@ -10,6 +10,7 @@
 //! | --- | --- |
 //! | Learn the inputs | [Validated values](guide::inputs) |
 //! | Configure a client | [Credentials, endpoints, and limits](guide::configuration) |
+//! | Use short calls and macros | [Awaitable tasks and named options](guide::macros) |
 //! | Run a command | [First command](guide::getting_started), then [results](guide::commands) |
 //! | Configure scoped work | [Source, resources, network](guide::configured_scope) |
 //! | Run a longer command | [Command budgets](guide::long_commands) |
@@ -53,19 +54,24 @@
 #![deny(unused_must_use, missing_docs)]
 #![deny(rustdoc::broken_intra_doc_links, rustdoc::invalid_codeblock_attributes)]
 mod client;
+mod command;
 mod create;
 mod domain;
 mod error;
 mod execution;
+mod macros;
 mod scope;
+mod task;
 mod transport;
 
 pub use client::*;
+pub use command::*;
 pub use create::*;
 pub use domain::*;
 pub use error::*;
 pub use execution::*;
 pub use scope::*;
+pub use task::*;
 
 pub mod guide;
 

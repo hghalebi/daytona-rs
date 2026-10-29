@@ -1,7 +1,8 @@
 use daytona::{
-    ApiKey, ConfigurationError, CpuAllocation, Create, CreateValidationError, Credentials, Daytona,
-    DiskSize, ExecutionError, ExecutionTimeout, ImageSpec, MemorySize, NetworkPolicy, Resources,
-    SandboxSource, SandboxTtl, ScopeError, ShellScript, ValidationError, WaitTimeout,
+    ApiKey, CheckedOutput, ConfigurationError, CpuAllocation, Create, CreateValidationError,
+    Credentials, Daytona, DiskSize, ExecutionError, ExecutionTimeout, ImageSpec, MemorySize,
+    NetworkPolicy, Resources, SandboxSource, SandboxTtl, ScopeError, ShellScript, ValidationError,
+    WaitTimeout,
 };
 use std::io::Write;
 use thiserror::Error;
@@ -19,7 +20,7 @@ enum ExampleError {
     #[error(transparent)]
     Configuration(#[from] ConfigurationError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<ExecutionError>),
+    Scope(#[from] ScopeError<CheckedOutput, ExecutionError>),
     #[error(transparent)]
     Output(#[from] std::io::Error),
 }
@@ -45,16 +46,10 @@ async fn run() -> Result<(), ExampleError> {
         ))
         .validate()?;
     let output = client
-        .sandboxes()
-        .ephemeral_from(request)
-        .readiness_timeout(WaitTimeout::seconds(120)?)
-        .run(async move |sandbox| {
-            sandbox
-                .shell(script)
-                .execution_timeout(timeout)
-                .checked_output()
-                .await
+        .scope_from(request, async move |sandbox| {
+            sandbox.run(script).execution_timeout(timeout).await
         })
+        .readiness_timeout(WaitTimeout::seconds(120)?)
         .await?;
 
     // The output owns its text. The sandbox has already been deleted.

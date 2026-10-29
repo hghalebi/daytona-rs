@@ -9,7 +9,7 @@ cargo run --example configured_scope -- --run-live
 ```
 
 Expected: `Hello from Daytona`, after deletion is confirmed. Build and validate
-one request, then move it into ephemeral_from. The scope keeps its exact reference,
+one request, then pass it and a callback to client.scope_from. The scope keeps its exact reference,
 source, resources, and policies. Persist request.reference() before moving it
 when restart recovery matters. Provider quotas and permissions are checked remotely.
 

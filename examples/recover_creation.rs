@@ -23,7 +23,7 @@ enum ExampleError {
     #[error(transparent)]
     Cleanup(#[from] CleanupError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<ExecutionError>),
+    Scope(#[from] ScopeError<CheckedOutput, ExecutionError>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("recovery record is invalid or uses an unsupported schema")]
@@ -99,7 +99,9 @@ async fn main() -> Result<(), ExampleError> {
     )?)?))?;
     if let Action::Start = action {
         let ttl = SandboxTtl::minutes(5)?;
-        let scope = client.sandboxes().ephemeral().ttl(SandboxTtl::minutes(5)?);
+        let scope = client
+            .run("printf 'recovery lesson\\n'")
+            .ttl(SandboxTtl::minutes(5)?);
         let record = RecoveryRecord {
             schema: Schema::V1,
             environment: Environment::DaytonaCloud,
@@ -111,10 +113,7 @@ async fn main() -> Result<(), ExampleError> {
         let mut file = std::fs::File::create_new(path)?;
         serde_json::to_writer(&mut file, &record).map_err(|_| ExampleError::Record)?;
         file.sync_all()?; // Failure here prevents creation.
-        let script = ShellScript::new("printf 'recovery lesson\\n'")?;
-        let output = scope
-            .run(async move |sandbox| sandbox.shell(script).checked_output().await)
-            .await?;
+        let output = scope.await?;
         write!(std::io::stdout().lock(), "{}", output.text())?;
         return Ok(());
     }

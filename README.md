@@ -17,7 +17,7 @@ Requires **Rust 1.98.0** and a Tokio runtime.
 
 ```toml
 [dependencies]
-daytona = { package = "daytona-rs", version = "0.2.1" }
+daytona = { package = "daytona-rs", version = "0.3.0" }
 thiserror = "2"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
@@ -30,6 +30,28 @@ The [first command tutorial](https://docs.rs/daytona-rs/latest/daytona/guide/get
 contains a complete program. It creates a temporary sandbox, prints a message,
 and confirms deletion. Credentials come from your application’s environment;
 the SDK does not read `.env` files automatically.
+
+Given a configured client, the workflow is one call:
+
+```rust,no_run
+use daytona::{CheckedOutput, Daytona, RunError};
+async fn run(client: &Daytona) -> Result<CheckedOutput, RunError> {
+    client.run("python --version").await
+}
+```
+
+Use named macro options when you need different limits:
+
+```rust,no_run
+use daytona::{CheckedOutput, Daytona, RunError};
+async fn run(client: &Daytona) -> Result<CheckedOutput, RunError> {
+    daytona::run!(client, "python --version", execution_timeout: 30 sec, ttl: 5 min).await
+}
+```
+
+For multiple operations use client.scope(callback).await. Inside that callback,
+sandbox.run(script).await uses the existing sandbox without deleting it. The outer
+scope owns cleanup. See the [macro guide](https://docs.rs/daytona-rs/latest/daytona/guide/macros/).
 
 From a source checkout, export `DAYTONA_API_KEY` through your secret manager or an
 interactive prompt. Then run:
@@ -94,7 +116,7 @@ create cloud resources. Recovery records belong in ignored `.plan/`; credentials
 and those records are excluded from Git and the crate archive.
 
 Report bugs through [GitHub issues](https://github.com/hghalebi/daytona-rs/issues).
-Migrating from 0.1? Read the [0.2 migration guide](docs/migration-0.2.md).
+Migrating from 0.2? Read the [0.3 migration guide](docs/migration-0.3.md).
 Use [private vulnerability reporting](SECURITY.md) for security issues.
 See the [changelog](CHANGELOG.md) for release details.
 

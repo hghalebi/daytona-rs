@@ -55,21 +55,13 @@ impl CheckedOutput {
         self.0
     }
 }
-/// A local command builder borrowing its sandbox.
-///
-/// No request is sent until output is awaited. The builder is consumed on
-/// execution. See [commands](crate::guide::commands).
-pub struct Shell<'sandbox, 'client> {
-    sandbox: &'sandbox Sandbox<'client>,
-    request: ValidatedShellRequest,
-}
 pub(crate) struct ValidatedShellRequest {
-    script: ShellScript,
-    timing: CommandTiming,
-    cwd: Option<SandboxPath>,
+    pub(crate) script: ShellScript,
+    pub(crate) timing: CommandTiming,
+    pub(crate) cwd: Option<SandboxPath>,
 }
-enum CommandTiming {
-    ClientDefault,
+#[derive(Debug)]
+pub(crate) enum CommandTiming {
     Coupled(ExecutionTimeout),
     Separate(CommandBudget),
 }
@@ -79,17 +71,18 @@ pub(crate) trait ShellExecutor {
     -> Result<ShellOutput, ExecutionError>;
 }
 impl<'client> Sandbox<'client> {
-    /// Moves a validated script into a local builder borrowing this sandbox.
+    /// Prepares a checked command in this sandbox. No creation or deletion occurs.
     ///
-    /// See [first command](crate::guide::getting_started).
-    pub fn shell(&self, script: ShellScript) -> Shell<'_, 'client> {
-        Shell {
+    /// Strings validate before transmission. Await checks the exit status; use
+    /// Command::output to inspect arbitrary exits. Default execution limit: 30 seconds.
+    pub fn run(&self, script: impl Into<ScriptInput>) -> Command<'_, 'client> {
+        self.command(CommandInput::new(script))
+    }
+    /// Resumes a corrected command draft without copying its input.
+    pub fn command(&self, input: CommandInput) -> Command<'_, 'client> {
+        Command {
             sandbox: self,
-            request: ValidatedShellRequest {
-                script,
-                timing: CommandTiming::ClientDefault,
-                cwd: None,
-            },
+            input,
         }
     }
     /// Downloads a bounded remote file into a newly created local file.
@@ -152,57 +145,6 @@ impl<'client> Sandbox<'client> {
         self.write_file(remote, FileContents(contents)).await
     }
 }
-impl Shell<'_, '_> {
-    /// Sets independent execution and HTTP limits for this command.
-    ///
-    /// The last call to this method or execution_timeout wins. The client cap
-    /// remains an outer bound. See [long commands](crate::guide::long_commands).
-    pub fn budget(mut self, budget: CommandBudget) -> Self {
-        self.request.timing = CommandTiming::Separate(budget);
-        self
-    }
-
-    /// Sets the provider execution limit and this request’s HTTP timeout.
-    ///
-    /// Without this setting, the provider receives 10 seconds and the HTTP request
-    /// uses the client deadline. The outer client cap always applies, even with
-    /// this setting. A timeout does not confirm process termination.
-    pub fn execution_timeout(mut self, timeout: ExecutionTimeout) -> Self {
-        self.request.timing = CommandTiming::Coupled(timeout);
-        self
-    }
-    /// Sets the remote working directory. Its existence and permissions are checked remotely.
-    pub fn cwd(mut self, path: SandboxPath) -> Self {
-        self.request.cwd = Some(path);
-        self
-    }
-    /// Executes once and returns captured output without requiring a zero exit.
-    ///
-    /// See [command results](crate::guide::commands).
-    ///
-    /// # Errors
-    /// Returns [`ExecutionError::Operation`] when execution cannot be observed through
-    /// the transport or protocol. No automatic retry occurs.
-    ///
-    /// # Cancellation
-    /// Dropping the future does not stop the remote command or confirm its outcome.
-    pub async fn output(self) -> Result<ShellOutput, ExecutionError> {
-        self.sandbox.execute(&self.request).await
-    }
-    /// Executes once and requires an explicitly reported zero exit code.
-    ///
-    /// See [first command](crate::guide::getting_started).
-    ///
-    /// # Errors
-    /// Returns transport/protocol failures, [`ExecutionError::NonZeroExit`], or
-    /// [`ExecutionError::MissingExitStatus`]. Exit-related failures retain output.
-    ///
-    /// # Cancellation
-    /// Dropping the future does not stop the remote command or undo its effects.
-    pub async fn checked_output(self) -> Result<CheckedOutput, ExecutionError> {
-        self.output().await?.checked()
-    }
-}
 impl ShellExecutor for Sandbox<'_> {
     async fn execute(
         &self,
@@ -212,7 +154,6 @@ impl ShellExecutor for Sandbox<'_> {
         let timeout = match &request.timing {
             CommandTiming::Coupled(t) => t.as_seconds(),
             CommandTiming::Separate(budget) => budget.execution().as_seconds(),
-            CommandTiming::ClientDefault => 10,
         };
         let dto = ExecuteDto {
             command: request.script.as_str(),
@@ -227,7 +168,6 @@ impl ShellExecutor for Sandbox<'_> {
         let outgoing = match &request.timing {
             CommandTiming::Coupled(t) => outgoing.timeout(t.duration()),
             CommandTiming::Separate(budget) => outgoing.timeout(budget.http().duration()),
-            CommandTiming::ClientDefault => outgoing,
         };
         let response: OutputDto = self
             .client

@@ -1,6 +1,6 @@
 use daytona::{
-    ApiKey, ConfigurationError, Credentials, Daytona, ExecutionError, ExecutionTimeout, SandboxTtl,
-    ScopeError, ShellScript, ValidationError,
+    ApiKey, CheckedOutput, ConfigurationError, Credentials, Daytona, ExecutionError,
+    ExecutionTimeout, SandboxTtl, ScopeError, ShellScript, ValidationError,
 };
 use std::io::Write;
 use thiserror::Error;
@@ -27,7 +27,7 @@ enum ExampleError {
     #[error(transparent)]
     Configuration(#[from] ConfigurationError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<WorkError>),
+    Scope(#[from] ScopeError<(CheckedOutput, CheckedOutput), WorkError>),
     #[error(transparent)]
     Output(#[from] std::io::Error),
 }
@@ -44,18 +44,9 @@ async fn main() -> Result<(), ExampleError> {
     let first_timeout = ExecutionTimeout::seconds(30)?;
     let second_timeout = ExecutionTimeout::seconds(30)?;
     let (first, second) = client
-        .sandboxes()
-        .ephemeral()
-        .ttl(SandboxTtl::minutes(5)?)
-        .run(async move |sandbox| {
-            let first = sandbox
-                .shell(first_script)
-                .execution_timeout(first_timeout)
-                .checked_output();
-            let second = sandbox
-                .shell(second_script)
-                .execution_timeout(second_timeout)
-                .checked_output();
+        .scope(async move |sandbox| {
+            let first = sandbox.run(first_script).execution_timeout(first_timeout);
+            let second = sandbox.run(second_script).execution_timeout(second_timeout);
             match tokio::join!(first, second) {
                 (Ok(first), Ok(second)) => Ok((first, second)),
                 (Err(first), Err(second)) => Err(WorkError::Both {
@@ -65,6 +56,7 @@ async fn main() -> Result<(), ExampleError> {
                 (Err(error), Ok(_)) | (Ok(_), Err(error)) => Err(WorkError::One(error)),
             }
         })
+        .ttl(SandboxTtl::minutes(5)?)
         .await?;
     write!(
         std::io::stdout().lock(),

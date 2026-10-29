@@ -1,6 +1,6 @@
 use daytona::{
     ApiKey, ConfigurationError, Credentials, Daytona, ExecutionError, ExecutionTimeout, SandboxTtl,
-    ScopeError, ShellScript, ValidationError,
+    ScopeError, ShellOutput, ShellScript, ValidationError,
 };
 use std::io::Write;
 use thiserror::Error;
@@ -16,7 +16,7 @@ enum ExampleError {
     #[error(transparent)]
     Configuration(#[from] ConfigurationError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<ExecutionError>),
+    Scope(#[from] ScopeError<ShellOutput, ExecutionError>),
     #[error("expected exit code 7 from the demonstration command")]
     UnexpectedExit,
     #[error(transparent)]
@@ -34,16 +34,14 @@ async fn run() -> Result<(), ExampleError> {
 
     // The scope owns the sandbox. Your callback borrows it until work ends.
     let output = client
-        .sandboxes()
-        .ephemeral()
-        .ttl(SandboxTtl::minutes(5)?)
-        .run(async move |sandbox| {
+        .scope(async move |sandbox| {
             sandbox
-                .shell(script)
+                .run(script)
                 .execution_timeout(timeout)
                 .output()
                 .await
         })
+        .ttl(SandboxTtl::minutes(5)?)
         .await?;
 
     if !output.exit_code().is_some_and(|code| code.get() == 7) {

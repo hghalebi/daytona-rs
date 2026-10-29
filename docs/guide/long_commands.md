@@ -16,7 +16,7 @@ cargo run --example long_command -- --run-live
 CommandBudget combines distinct validated values. A shorter HTTP wait is allowed
 when early return is intentional; it does not prove the process stopped. The last
 budget() or execution_timeout() call wins. The old setter still gives execution
-and HTTP the same limit. Without either setter, execution defaults to 10 seconds.
+and HTTP the same limit. Without either setter, execution defaults to 30 seconds.
 
 The transport clock starts around request execution and body capture. A provider
 starts its own execution clock remotely. These clocks are not synchronized. A

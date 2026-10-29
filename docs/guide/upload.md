@@ -20,7 +20,7 @@ deletes that sandbox, so the remote file is temporary. The local input stays.
 cargo run --example upload_file -- --run-live
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.2.1/source/examples/upload_file.rs)
+The [complete source](https://docs.rs/crate/daytona-rs/0.3.0/source/examples/upload_file.rs)
 is shipped with the crate and included below.
 
 ## Complete example

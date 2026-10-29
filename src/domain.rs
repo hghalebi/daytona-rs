@@ -1,3 +1,6 @@
+mod input;
+pub use input::*;
+
 use serde::{Deserialize, Serialize};
 use std::{
     fmt,
@@ -13,6 +16,12 @@ use thiserror::Error;
 /// Variants identify the violated rule without retaining the sensitive input.
 /// See [validated inputs](crate::guide::inputs).
 pub enum ValidationError {
+    /// A failed field must be explicitly corrected before retrying local validation.
+    #[error("{field} requires correction")]
+    CorrectionRequired {
+        /// Field that must be replaced with a valid value.
+        field: &'static str,
+    },
     /// Custom resource sizes require an image source, not a snapshot.
     #[error(
         "custom resources require SandboxSource::Image; snapshots keep their existing resources"
@@ -385,12 +394,16 @@ impl ShellScript {
     /// a NUL byte.
     pub fn new(value: impl Into<String>) -> Result<Self, ValidationError> {
         let value = value.into();
-        if !(!value.trim().is_empty() && !value.contains('\0')) {
+        Self::validate_text(&value)?;
+        Ok(Self(value))
+    }
+    fn validate_text(value: &str) -> Result<(), ValidationError> {
+        if value.trim().is_empty() || value.contains('\0') {
             return Err(ValidationError::InvalidText {
                 field: "ShellScript",
             });
         }
-        Ok(Self(value))
+        Ok(())
     }
     /// Borrows the original text. It may contain sensitive data; avoid logging it.
     pub fn as_str(&self) -> &str {

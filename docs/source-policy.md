@@ -54,3 +54,9 @@ third-party code remain outside the owned-source proof boundary. Clippy adds
 semantic checks on compiled code; compiler misuse tests and protocol tests verify
 separate architectural and behavioral obligations. No test result is described
 as a universal panic-freedom or exactly-once guarantee.
+
+Reviewed task and unit macros use public validated builders. The policy checks
+macro arguments and definitions, and rejects unchecked arithmetic and indexing
+in transcriber bodies. Negative fixtures cover nested forbidden calls and
+transcribers. This is targeted inspection, not arbitrary recursive macro
+expansion. Compiled consumer fixtures and strict Clippy provide separate checks.

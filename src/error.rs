@@ -1,3 +1,4 @@
+use crate::CommandPreparationError;
 use crate::{
     Create, CreationReceipt, RejectedCreate, SandboxId, ShellOutput, UncertainCreation, Validated,
     ValidationError,
@@ -196,6 +197,9 @@ impl WaitError {
 /// Exit-related variants retain captured output. See [commands](crate::guide::commands).
 pub enum ExecutionError {
     #[error(transparent)]
+    /// Local validation failed; the draft is retained for correction.
+    Preparation(#[from] Box<CommandPreparationError>),
+    #[error(transparent)]
     /// The remote operation failed at the transport, protocol, or access boundary.
     Operation(#[from] OperationError),
     #[error("command response has no exit status")]
@@ -219,7 +223,7 @@ impl ExecutionError {
     pub fn output(&self) -> Option<&ShellOutput> {
         match self {
             Self::NonZeroExit { output } | Self::MissingExitStatus { output } => Some(output),
-            Self::Operation(_) => None,
+            Self::Operation(_) | Self::Preparation(_) => None,
         }
     }
 }

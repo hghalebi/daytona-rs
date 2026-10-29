@@ -17,7 +17,7 @@ enum ExampleError {
     #[error(transparent)]
     Create(#[from] CreateError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<ExecutionError>),
+    Scope(#[from] ScopeError<CheckedOutput, ExecutionError>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -31,9 +31,7 @@ async fn main() -> Result<(), ExampleError> {
     }
     let key = ApiKey::new(std::env::var("DAYTONA_API_KEY")?)?;
     let client = Daytona::new(Credentials::ApiKey(key))?;
-    let request = client
-        .sandboxes()
-        .create()
+    let request = daytona::Create::draft()
         .ttl(SandboxTtl::minutes(5)?)
         .validate()?;
     let script = ShellScript::new("printf 'manual lifecycle complete\n'")?;
@@ -81,7 +79,7 @@ async fn main() -> Result<(), ExampleError> {
         }
     };
     let sandbox = ready.into_sandbox(&client);
-    let work = sandbox.shell(script).checked_output().await;
+    let work = sandbox.run(script).await;
     // Always attempt deletion after work, even when the command failed.
     let cleanup = sandbox.delete(cleanup_timeout).await;
     let report = match (work, cleanup) {

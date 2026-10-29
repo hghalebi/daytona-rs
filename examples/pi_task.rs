@@ -5,6 +5,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 enum ExampleError {
+    #[error(transparent)]
+    Create(#[from] CreateValidationError),
     #[error("pass --run-live to create a billable sandbox and use your model account")]
     ConsentRequired,
     #[error(transparent)]
@@ -20,7 +22,7 @@ enum ExampleError {
     #[error("PI_AUTH_FILE must contain only one openai-codex credential object")]
     AuthFile,
     #[error(transparent)]
-    Scope(#[from] ScopeError<TaskError>),
+    Scope(#[from] ScopeError<(), TaskError>),
     #[error(transparent)]
     Operation(#[from] OperationError),
     #[error("the independent readback did not confirm sandbox deletion")]
@@ -133,9 +135,8 @@ async fn generate(
 
     // Install before sending the model credential to the sandbox.
     sandbox
-        .shell(ShellScript::new(INSTALL)?)
+        .run(ShellScript::new(INSTALL)?)
         .execution_timeout(ExecutionTimeout::seconds(240)?)
-        .checked_output()
         .await?;
     sandbox
         .upload(
@@ -144,7 +145,7 @@ async fn generate(
         )
         .await?;
     let generation = sandbox
-        .shell(ShellScript::new(GENERATE)?)
+        .run(ShellScript::new(GENERATE)?)
         .execution_timeout(ExecutionTimeout::seconds(240)?)
         .output()
         .await?;
@@ -153,11 +154,10 @@ async fn generate(
 
     // Check real execution separately from Pi's description of its work.
     let output = sandbox
-        .shell(ShellScript::new(
+        .run(ShellScript::new(
             "cd /tmp/daytona-pi/work && timeout 10 python3 sum_even.py",
         )?)
         .execution_timeout(ExecutionTimeout::seconds(15)?)
-        .checked_output()
         .await?;
     if output.text() != "30\n" {
         return Err(TaskError::OutputMismatch);
@@ -180,19 +180,14 @@ async fn run() -> Result<(), ExampleError> {
     // The HTTP deadline must exceed each remote command's execution limit.
     let config = ClientConfig::cloud()?.request_timeout(RequestTimeout::seconds(270)?);
     let client = Daytona::with_config(Credentials::ApiKey(key), config)?;
-    let scope = client
-        .sandboxes()
-        .ephemeral()
-        .ttl(SandboxTtl::minutes(15)?)
-        .readiness_timeout(WaitTimeout::seconds(120)?)
-        .cleanup_timeout(WaitTimeout::seconds(90)?);
+    let request = Create::draft().ttl(SandboxTtl::minutes(15)?).validate()?;
 
     // Save recovery data before creating the sandbox. This file contains no key.
     let directory = std::path::PathBuf::from(".plan")
-        .join(format!("pi-{}", scope.reference().operation().as_str()));
+        .join(format!("pi-{}", request.reference().operation().as_str()));
     std::fs::create_dir_all(&directory)?;
     let mut reference = std::fs::File::create_new(directory.join("creation-reference.json"))?;
-    reference.write_all(serde_json::to_string(scope.reference())?.as_bytes())?;
+    reference.write_all(serde_json::to_string(request.reference())?.as_bytes())?;
     reference.sync_all()?;
     writeln!(
         std::io::stdout().lock(),
@@ -200,8 +195,12 @@ async fn run() -> Result<(), ExampleError> {
         directory.display()
     )?;
 
-    scope
-        .run(async |sandbox| generate(sandbox, &auth, &directory).await)
+    client
+        .scope_from(request, async |sandbox| {
+            generate(sandbox, &auth, &directory).await
+        })
+        .readiness_timeout(WaitTimeout::seconds(120)?)
+        .cleanup_timeout(WaitTimeout::seconds(90)?)
         .await?;
 
     // The scope already confirmed cleanup. Check again through a separate request.

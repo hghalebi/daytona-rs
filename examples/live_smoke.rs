@@ -19,7 +19,7 @@ enum SmokeError {
     #[error(transparent)]
     Json(#[from] serde_json::Error),
     #[error("live scoped workflow failed; recovery reference is saved in .plan")]
-    Scope(#[source] Box<ScopeError<ProbeError>>),
+    Scope(#[source] Box<ScopeError<WorkProof, ProbeError>>),
     #[error(transparent)]
     Operation(#[from] OperationError),
     #[error("independent readback did not confirm deletion")]
@@ -73,17 +73,15 @@ fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), std::io::Error
 async fn probe(sandbox: &Sandbox<'_>, directory: &Path) -> Result<WorkProof, ProbeError> {
     write_json(&directory.join("sandbox.json"), sandbox.id())?;
     let output = sandbox
-        .shell(ShellScript::new("printf '%s\\n' 'daytona-rs-live-ok'")?)
+        .run(ShellScript::new("printf '%s\\n' 'daytona-rs-live-ok'")?)
         .execution_timeout(ExecutionTimeout::seconds(10)?)
-        .checked_output()
         .await?;
     if output.text() != "daytona-rs-live-ok\n" {
         return Err(ProbeError::OutputMismatch);
     }
     match sandbox
-        .shell(ShellScript::new("exit 7")?)
+        .run(ShellScript::new("exit 7")?)
         .execution_timeout(ExecutionTimeout::seconds(10)?)
-        .checked_output()
         .await
     {
         Err(ExecutionError::NonZeroExit { output })
@@ -140,8 +138,7 @@ async fn main() -> Result<(), SmokeError> {
         std::path::PathBuf::from(".plan").join(format!("live-smoke-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&directory)?;
     let scope = client
-        .sandboxes()
-        .ephemeral()
+        .scope(async |sandbox| probe(sandbox, &directory).await)
         .ttl(SandboxTtl::minutes(5)?)
         .readiness_timeout(WaitTimeout::seconds(120)?)
         .cleanup_timeout(WaitTimeout::seconds(90)?);
@@ -155,7 +152,6 @@ async fn main() -> Result<(), SmokeError> {
         directory.display()
     )?;
     let work = scope
-        .run(async |sandbox| probe(sandbox, &directory).await)
         .await
         .map_err(|error| SmokeError::Scope(Box::new(error)))?;
     let id: SandboxId =

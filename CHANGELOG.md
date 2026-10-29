@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 — 2026-10-29
+
+This is an intentionally breaking public API redesign.
+
+- Run a checked command and confirm temporary-sandbox deletion with
+  client.run(script).await. Use client.scope(callback).await for several operations
+  and scope_from for a validated creation request with preserved policies/reference.
+- Execute a checked command on an existing sandbox with sandbox.run(script).await.
+  This sends no creation or deletion request. Use output().await to inspect any exit.
+- Added run!, scope!, ttl! and execution_timeout! with named, typed options,
+  single argument evaluation, useful invalid-syntax diagnostics and no hidden runtime.
+- Text input validates before remote effects. Invalid input and settings retain
+  owned drafts for explicit correction; creation references survive validation.
+- ScopeError now includes the output type and retains successful output if cleanup
+  fails. ScopeReport::into_result is lossless. Arbitrary work/output diagnostics
+  are redacted without a Debug bound on callback output.
+- The command execution/request default is 30 seconds; temporary TTL defaults to
+  5 minutes. Client HTTP caps, bounded capture and explicit budget precedence remain.
+- Removed the redundant Sandboxes, Ephemeral, NeedsTtl, HasTtl and Shell facade
+  types. Rewrote all examples around the canonical API and added the macro guide.
+- Expanded macro source-policy checks, consumer compile contracts, deterministic
+  cancellation/reconciliation tests and renamed-dependency CI coverage.
+
+See [migration from 0.2](docs/migration-0.3.md). Cancellation still does not perform
+async cleanup. The SDK does not retry uncertain mutations. No SonarCloud added.
+
 ## 0.2.1 — 2026-10-29
 
 - Build docs.rs documentation for its Linux host target. The additional Apple

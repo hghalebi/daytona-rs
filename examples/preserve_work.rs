@@ -13,7 +13,9 @@ enum WorkError {
 #[derive(Debug, Error)]
 enum ExampleError {
     #[error(transparent)]
-    Scope(#[from] ScopeError<WorkError>),
+    LiveScope(#[from] ScopeError<CheckedOutput, WorkError>),
+    #[error(transparent)]
+    Scope(#[from] ScopeError<(), WorkError>),
     #[error(transparent)]
     Output(#[from] std::io::Error),
     #[error("saving output and sandbox cleanup both failed")]
@@ -46,12 +48,18 @@ fn handle<T>(
         }
         ScopeReport::CleanupFailed { output, cleanup } => {
             match destination.write_all(text(&output).as_bytes()) {
-                Ok(()) => Err(ScopeError::Cleanup(cleanup).into()),
+                Ok(()) => Err(ScopeError::Cleanup {
+                    output: (),
+                    cleanup,
+                }
+                .into()),
                 Err(output) => Err(ExampleError::OutputAndCleanup { output, cleanup }),
             }
         }
-        ScopeReport::WorkFailed(work) => Err(ScopeError::Work(work).into()),
-        ScopeReport::BothFailed { work, cleanup } => Err(ScopeError::Both { work, cleanup }.into()),
+        ScopeReport::WorkFailed(work) => Err(ExampleError::Scope(ScopeError::Work(work))),
+        ScopeReport::BothFailed { work, cleanup } => {
+            Err(ExampleError::Scope(ScopeError::Both { work, cleanup }))
+        }
     }
 }
 fn simulated_cleanup() -> Result<CleanupError, ValidationError> {
@@ -77,7 +85,7 @@ fn simulate() -> Result<(), ExampleError> {
         let mut saved = Vec::new();
         let result = handle(report, &mut saved, String::as_str);
         let correct = match (index, result) {
-            (0, Ok(())) | (2, Err(ExampleError::Scope(ScopeError::Cleanup(_)))) => {
+            (0, Ok(())) | (2, Err(ExampleError::Scope(ScopeError::Cleanup { .. }))) => {
                 saved == b"saved work"
             }
             (1, Err(ExampleError::Scope(ScopeError::Work(_))))
@@ -105,21 +113,17 @@ async fn main() -> Result<(), ExampleError> {
     let script = ShellScript::new("printf 'saved work\\n'")?;
     let work_limit = ExecutionTimeout::seconds(30)?;
     let report = client
-        .sandboxes()
-        .ephemeral()
-        .ttl(SandboxTtl::minutes(5)?)
-        .run_report(async move |sandbox| {
+        .scope(async move |sandbox| {
             let result = tokio::time::timeout(
                 std::time::Duration::from_secs(40),
-                sandbox
-                    .shell(script)
-                    .execution_timeout(work_limit)
-                    .checked_output(),
+                sandbox.run(script).execution_timeout(work_limit),
             )
             .await
             .map_err(|_| WorkError::Deadline)??;
             Ok::<CheckedOutput, WorkError>(result)
         })
+        .ttl(SandboxTtl::minutes(5)?)
+        .report()
         .await?;
     handle(report, &mut std::io::stdout().lock(), CheckedOutput::text)
 }

@@ -222,6 +222,11 @@ impl RawCreate {
     }
 }
 impl Create<Validated> {
+    pub(crate) fn with_ttl(mut self, ttl: SandboxTtl) -> Self {
+        self.state.specification.ttl = ttl;
+        self
+    }
+
     pub(crate) fn scoped(ttl: SandboxTtl, reference: CreationReference) -> Self {
         Self {
             state: Validated {

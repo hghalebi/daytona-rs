@@ -20,7 +20,7 @@ enum ExampleError {
     #[error(transparent)]
     Configuration(#[from] ConfigurationError),
     #[error(transparent)]
-    Scope(#[from] ScopeError<WorkError>),
+    Scope(#[from] ScopeError<TransferReceipt, WorkError>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -35,10 +35,8 @@ async fn main() -> Result<(), ExampleError> {
     let local = LocalSourcePath::new("lesson-input.txt")?;
     // The setup command in the guide creates this small input file.
     let receipt = client
-        .sandboxes()
-        .ephemeral()
+        .scope(async move |sandbox| Ok::<_, WorkError>(sandbox.upload(&local, &remote).await?))
         .ttl(SandboxTtl::minutes(5)?)
-        .run(async move |sandbox| Ok::<_, WorkError>(sandbox.upload(&local, &remote).await?))
         .await?;
     writeln!(
         std::io::stdout().lock(),

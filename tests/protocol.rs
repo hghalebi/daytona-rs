@@ -1,4 +1,255 @@
 mod support;
+
+#[tokio::test]
+async fn one_call_defaults_and_macro_options() -> Result<(), TestError> {
+    for configured in [false, true] {
+        let server = Server::start(vec![
+            Step::json("POST /api/sandbox ", 200, CREATED).containing(vec![if configured {
+                "\"ttlMinutes\":7"
+            } else {
+                "\"ttlMinutes\":5"
+            }]),
+            ready_step(),
+            execute_step(SUCCESS).containing(vec![if configured {
+                "\"timeout\":12"
+            } else {
+                "\"timeout\":30"
+            }]),
+            delete_step(200),
+            absent_step(),
+        ])
+        .await?;
+        let client = server.client()?;
+        let task = if configured {
+            daytona::run!(&client, "printf hello", execution_timeout: 12 sec, ttl: 7 min,)
+        } else {
+            client.run("printf hello")
+        };
+        let saved = serde_json::to_string(task.reference())?;
+        require(!saved.is_empty(), "reference available before await")?;
+        match task.await {
+            Ok(output) => require(output.text() == "hello\n", "default command output")?,
+            Err(_) => return Err(TestError::Contract("one call failed")),
+        }
+        server.finish().await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn macro_evaluation_order_and_existing_sandbox() -> Result<(), TestError> {
+    let server = Server::start(vec![
+        execute_step(SUCCESS).containing(vec!["\"timeout\":9"]),
+    ])
+    .await?;
+    let client = server.client()?;
+    let order = std::cell::RefCell::new(Vec::new());
+    let task = daytona::run!(
+        { order.borrow_mut().push("client"); &client },
+        { order.borrow_mut().push("script"); String::from("true") },
+        ttl: { order.borrow_mut().push("ttl"); SandboxTtl::minutes(5)? },
+        execution_timeout: { order.borrow_mut().push("limit"); ExecutionTimeout::seconds(9)? },
+    );
+    require(
+        *order.borrow() == vec!["client", "script", "ttl", "limit"],
+        "arguments once in lexical order",
+    )?;
+    drop(task);
+    let sandbox = client.sandbox(SandboxId::new("sb-1")?);
+    let output = daytona::run!(&sandbox, "true", execution_timeout: 9 sec).await?;
+    require(output.text() == "hello\n", "existing sandbox command")?;
+    // Only the execute request is served: no creation or deletion.
+    server.finish().await
+}
+
+#[tokio::test]
+async fn invalid_macro_input_preserves_recoverable_intent() -> Result<(), TestError> {
+    let server = Server::start(vec![
+        Step::json("POST /api/sandbox ", 200, CREATED).containing(vec!["\"ttlMinutes\":5"]),
+        ready_step(),
+        execute_step(SUCCESS),
+        delete_step(200),
+        absent_step(),
+    ])
+    .await?;
+    let client = server.client()?;
+    let task = daytona::run!(&client, "true", ttl: 0 min);
+    let saved = serde_json::to_string(task.reference())?;
+    let (scope, command) = match task.await {
+        Err(ScopeError::Preparation(PreparationError::Scope {
+            error,
+            command: Some(command),
+        })) => {
+            let (input, cause) = error.into_parts();
+            require(
+                matches!(cause, ValidationError::Zero { .. }),
+                "typed TTL error",
+            )?;
+            require(
+                serde_json::to_string(input.reference())? == saved,
+                "failed preparation retains reference",
+            )?;
+            (input.ttl(SandboxTtl::minutes(5)?), *command)
+        }
+        _ => return Err(TestError::Contract("invalid TTL reached execution")),
+    };
+    match client.resume_run(scope, command).await {
+        Ok(_) => {}
+        Err(_) => return Err(TestError::Contract("corrected intent did not execute")),
+    }
+    server.finish().await
+}
+
+#[tokio::test]
+async fn invalid_command_and_timing_are_local() -> Result<(), TestError> {
+    let server = Server::start(vec![]).await?;
+    let client = server.client()?;
+    for script in ["", " \n", "bad\0text"] {
+        match client.run(script).await {
+            Err(ScopeError::Preparation(PreparationError::Command { error, scope })) => {
+                let (input, cause) = error.into_parts();
+                require(
+                    input.script_input().text() == script,
+                    "invalid script retained",
+                )?;
+                require(
+                    matches!(cause, ValidationError::InvalidText { .. }),
+                    "script violation",
+                )?;
+                require(
+                    !scope.reference().operation().as_str().is_empty(),
+                    "recovery identity",
+                )?;
+            }
+            _ => return Err(TestError::Contract("invalid script did not fail locally")),
+        }
+    }
+    let sandbox = client.sandbox(SandboxId::new("sb-1")?);
+    match daytona::run!(&sandbox, "true", execution_timeout: 0 sec).await {
+        Err(ExecutionError::Preparation(error)) => {
+            let (draft, cause) = error.into_parts();
+            require(
+                matches!(cause, ValidationError::Zero { .. }),
+                "invalid timing",
+            )?;
+            require(
+                draft.script_input().text() == "true",
+                "script retained on timing error",
+            )?;
+            // Extracting the draft never silently replaces an invalid limit.
+            require(
+                matches!(
+                    sandbox.command(draft).await,
+                    Err(ExecutionError::Preparation(_))
+                ),
+                "correction required",
+            )
+        }
+        _ => return Err(TestError::Contract("invalid timing reached execution")),
+    }?;
+    server.finish().await
+}
+
+#[tokio::test]
+async fn scope_macro_borrows_captures_and_redacts_non_debug_output() -> Result<(), TestError> {
+    struct Secret(String);
+    for before in [true, false] {
+        let server = Server::start(vec![create_step(), ready_step(), delete_step(500)]).await?;
+        let client = server.client()?;
+        let text = String::from("private-result");
+        let events = std::cell::RefCell::new(Vec::new());
+        let result = if before {
+            daytona::scope!(
+                { events.borrow_mut().push("client"); &client },
+                ttl: { events.borrow_mut().push("ttl"); SandboxTtl::minutes(10)? },
+                work: { events.borrow_mut().push("work"); async |_| Ok::<_, ExecutionError>(Secret(String::from(text.as_str()))) },
+            ).await
+        } else {
+            daytona::scope!(&client, work: async |_| Ok::<_, ExecutionError>(Secret(String::from(text.as_str()))), ttl: 10 min).await
+        };
+        if before {
+            require(
+                *events.borrow() == vec!["client", "ttl", "work"],
+                "scope evaluation order",
+            )?;
+        }
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => return Err(TestError::Contract("cleanup failure missing")),
+        };
+        require(
+            !format!("{error:?}").contains("private-result"),
+            "arbitrary output redacted",
+        )?;
+        require(
+            error
+                .successful_output()
+                .is_some_and(|output| output.0 == text),
+            "non-Debug output retained",
+        )?;
+        match error {
+            ScopeError::Cleanup { output, cleanup } => {
+                require(
+                    output.0 == text && cleanup.sandbox_id().as_str() == "sb-1",
+                    "owned output and cleanup",
+                )?;
+            }
+            _ => return Err(TestError::Contract("cleanup classification")),
+        }
+        server.finish().await?;
+    }
+    Ok(())
+}
+
+#[tokio::test]
+async fn one_call_preserves_all_checked_failures() -> Result<(), TestError> {
+    for (body, deleted) in [
+        (SUCCESS, false),
+        (r#"{"result":"sensitive","exitCode":2}"#, true),
+        (r#"{"result":"sensitive"}"#, false),
+    ] {
+        let mut steps = vec![
+            create_step(),
+            ready_step(),
+            execute_step(body),
+            delete_step(if deleted { 200 } else { 500 }),
+        ];
+        if deleted {
+            steps.push(absent_step());
+        }
+        let server = Server::start(steps).await?;
+        let client = server.client()?;
+        let result = daytona::run!(&client, "true", ttl:10 min).await;
+        let error = match result {
+            Err(error) => error,
+            Ok(_) => return Err(TestError::Contract("failure missing")),
+        };
+        require(
+            !format!("{error:?}").contains("sensitive"),
+            "nested redaction",
+        )?;
+        match error {
+            ScopeError::Cleanup { output, .. } => require(
+                body == SUCCESS && output.text() == "hello\n",
+                "cleanup retains output",
+            )?,
+            ScopeError::Work(ExecutionError::NonZeroExit { output }) => {
+                require(deleted && output.text() == "sensitive", "nonzero retained")?
+            }
+            ScopeError::Both {
+                work: ExecutionError::MissingExitStatus { output },
+                ..
+            } => require(
+                !deleted && output.text() == "sensitive",
+                "missing exit and cleanup retained",
+            )?,
+            _ => return Err(TestError::Contract("wrong checked failure")),
+        }
+        server.finish().await?;
+    }
+    Ok(())
+}
+
 use daytona::*;
 use support::*;
 
@@ -29,7 +280,7 @@ async fn shell(sandbox: &Sandbox<'_>) -> Result<CheckedOutput, ExecutionError> {
     // The fixture uses a validated script supplied by the test below instead.
     let script = ShellScript::new("echo hello")
         .map_err(|e| OperationError::Protocol(ProtocolError::Validation(e)))?;
-    sandbox.shell(script).checked_output().await
+    sandbox.run(script).await
 }
 #[tokio::test]
 async fn scoped_workflow_encodes_protocol_and_confirms_deletion() -> Result<(), TestError> {
@@ -45,16 +296,8 @@ async fn scoped_workflow_encodes_protocol_and_confirms_deletion() -> Result<(), 
     let script = ShellScript::new("echo hello")?;
     let limit = ExecutionTimeout::seconds(30)?;
     let result = client
-        .sandboxes()
-        .ephemeral()
+        .scope(async move |sandbox| sandbox.run(script).execution_timeout(limit).await)
         .ttl(SandboxTtl::minutes(10)?)
-        .run(async move |sandbox| {
-            sandbox
-                .shell(script)
-                .execution_timeout(limit)
-                .checked_output()
-                .await
-        })
         .await;
     match result {
         Ok(output) => require(output.text() == "hello\n", "owned scope output")?,
@@ -81,10 +324,9 @@ async fn scoped_errors_preserve_work_cleanup_and_output() -> Result<(), TestErro
         let server = Server::start(steps).await?;
         let client = server.client()?;
         let result = client
-            .sandboxes()
-            .ephemeral()
+            .scope(async |sandbox| shell(sandbox).await)
             .ttl(SandboxTtl::minutes(10)?)
-            .run_report(async |sandbox| shell(sandbox).await)
+            .report()
             .await;
         match (body == SUCCESS, status, result) {
             (true, 500, Ok(ScopeReport::CleanupFailed { output, cleanup })) => {
@@ -101,7 +343,7 @@ async fn scoped_errors_preserve_work_cleanup_and_output() -> Result<(), TestErro
                 )?
             }
             (false, 500, Ok(ScopeReport::BothFailed { work, cleanup })) => {
-                let error = ScopeError::Both { work, cleanup };
+                let error: RunError = ScopeError::Both { work, cleanup };
                 require(
                     error.work_error().is_some() && error.cleanup_error().is_some(),
                     "both failure accessors",
@@ -131,10 +373,8 @@ async fn setup_failure_also_attempts_cleanup() -> Result<(), TestError> {
     .await?;
     let client = server.client()?;
     let result = client
-        .sandboxes()
-        .ephemeral()
+        .scope(async |_| Ok::<_, ExecutionError>(()))
         .ttl(SandboxTtl::minutes(10)?)
-        .run(async |_| Ok::<_, ExecutionError>(()))
         .await;
     match result {
         Err(ScopeError::Setup(ScopeSetupError {
@@ -385,12 +625,8 @@ async fn borrowed_futures_execute_concurrently_without_handle_duplication() -> R
     let server = Server::start(vec![execute_step(SUCCESS), execute_step(SUCCESS)]).await?;
     let client = server.client()?;
     let sandbox = client.sandbox(SandboxId::new("sb-1")?);
-    let first = sandbox
-        .shell(ShellScript::new("echo one")?)
-        .checked_output();
-    let second = sandbox
-        .shell(ShellScript::new("echo two")?)
-        .checked_output();
+    let first = sandbox.run(ShellScript::new("echo one")?);
+    let second = sandbox.run(ShellScript::new("echo two")?);
     let (a, b) = tokio::join!(first, second);
     require(
         a?.text() == "hello\n" && b?.text() == "hello\n",
@@ -546,14 +782,32 @@ async fn cancelled_scope_can_reconcile_from_previously_saved_reference() -> Resu
     ])
     .await?;
     let client = server.client()?;
-    let scope = client.sandboxes().ephemeral().ttl(SandboxTtl::minutes(10)?);
+    let (entered, observed) = tokio::sync::oneshot::channel();
+    let scope = client
+        .scope(async move |_| {
+            entered
+                .send(())
+                .map_err(|_| TestError::Contract("work entry signal"))?;
+            std::future::pending::<Result<(), TestError>>().await
+        })
+        .ttl(SandboxTtl::minutes(10)?);
     let saved = serde_json::to_string(scope.reference())?;
-    let result = tokio::time::timeout(
-        std::time::Duration::from_millis(100),
-        scope.run(async |_| std::future::pending::<Result<(), ExecutionError>>().await),
-    )
-    .await;
-    require(result.is_err(), "scope cancelled during work")?;
+    let mut work = Box::pin(scope.execute());
+    let mut observed = Box::pin(observed);
+    std::future::poll_fn(|context| {
+        use std::{future::Future, task::Poll};
+        if let Poll::Ready(result) = work.as_mut().poll(context) {
+            drop(result);
+            return Poll::Ready(Err(TestError::Contract("work ended before cancellation")));
+        }
+        match observed.as_mut().poll(context) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(_)) => Poll::Ready(Err(TestError::Contract("work entry receiver"))),
+            Poll::Pending => Poll::Pending,
+        }
+    })
+    .await?;
+    drop(work);
     let restored: CreationReference = serde_json::from_str(&saved)?;
     match restored.reconcile(&client).await? {
         Reconciliation::Found(receipt) => {
@@ -578,10 +832,8 @@ async fn rejected_work_can_be_recovered_without_leaking_output_in_diagnostics()
     .await?;
     let client = server.client()?;
     match client
-        .sandboxes()
-        .ephemeral()
+        .scope(async |sandbox| shell(sandbox).await)
         .ttl(SandboxTtl::minutes(10)?)
-        .run(async |sandbox| shell(sandbox).await)
         .await
     {
         Err(ScopeError::Work(ExecutionError::NonZeroExit { output })) => require(
@@ -733,7 +985,7 @@ async fn command_and_client_deadlines_bound_headers_and_body() -> Result<(), Tes
         )?;
         let sandbox = client.sandbox(SandboxId::new("sb-1")?);
         let result = sandbox
-            .shell(ShellScript::new("sleep 10")?)
+            .run(ShellScript::new("sleep 10")?)
             .execution_timeout(ExecutionTimeout::seconds(command_seconds)?)
             .output()
             .await;
@@ -762,8 +1014,7 @@ async fn ownership_helpers_retain_output_identity_and_failure_evidence() -> Resu
     let sandbox = client.sandbox(SandboxId::new("sb-1")?);
     for _ in 0..2 {
         let failure = sandbox
-            .shell(ShellScript::new("exit 7")?)
-            .checked_output()
+            .run(ShellScript::new("exit 7")?)
             .await
             .err()
             .ok_or(TestError::Contract("checked failure"))?;
@@ -820,10 +1071,7 @@ async fn callback_deadline_returns_to_scope_for_cleanup() -> Result<(), TestErro
     .await?;
     let client = server.client()?;
     let result = client
-        .sandboxes()
-        .ephemeral()
-        .ttl(SandboxTtl::minutes(10)?)
-        .run(async |_| {
+        .scope(async |_| {
             tokio::time::timeout(
                 std::time::Duration::from_millis(10),
                 std::future::pending::<()>(),
@@ -831,6 +1079,7 @@ async fn callback_deadline_returns_to_scope_for_cleanup() -> Result<(), TestErro
             .await
             .map_err(|_| ExecutionError::Operation(TransportError::Timeout.into()))
         })
+        .ttl(SandboxTtl::minutes(10)?)
         .await;
     require(
         matches!(result, Err(ScopeError::Work(_))),
@@ -902,18 +1151,19 @@ async fn configured_scopes_preserve_intent_and_all_cleanup_outcomes() -> Result<
         }
         let server = Server::start(steps).await?;
         let client = server.client()?;
-        let scope = client.sandboxes().ephemeral_from(request);
+        let scope = client.scope_from(request, async |sandbox| shell(sandbox).await);
         require(
             serde_json::to_string(scope.reference())? == saved,
             "exact reference preserved",
         )?;
-        let result = scope.run(async |sandbox| shell(sandbox).await).await;
+        let result = scope.await;
         let valid = match result {
             Ok(_) => ready && work_succeeds && cleanup_succeeds,
             Err(ScopeError::Work(_)) => ready && !work_succeeds && cleanup_succeeds,
-            Err(ScopeError::Cleanup(_)) => ready && work_succeeds && !cleanup_succeeds,
+            Err(ScopeError::Cleanup { .. }) => ready && work_succeeds && !cleanup_succeeds,
             Err(ScopeError::Both { .. }) => ready && !work_succeeds && !cleanup_succeeds,
             Err(ScopeError::Setup(error)) => !ready && error.cleanup.is_none(),
+            Err(ScopeError::Preparation(_)) => false,
         };
         require(valid, "configured lifecycle outcome")?;
         server.finish().await?;
@@ -935,26 +1185,24 @@ async fn separate_command_budget_and_setter_precedence() -> Result<(), TestError
     let client = server.client()?;
     let sandbox = client.sandbox(SandboxId::new("sb-1")?);
     let result = sandbox
-        .shell(ShellScript::new("work")?)
+        .run(ShellScript::new("work")?)
         .execution_timeout(ExecutionTimeout::seconds(3)?)
         .budget(CommandBudget::new(
             ExecutionTimeout::seconds(1)?,
             RequestTimeout::seconds(2)?,
         ))
-        .checked_output()
         .await?;
     require(
         result.text() == "finished",
         "HTTP grace beyond provider limit",
     )?;
     sandbox
-        .shell(ShellScript::new("work")?)
+        .run(ShellScript::new("work")?)
         .budget(CommandBudget::new(
             ExecutionTimeout::seconds(1)?,
             RequestTimeout::seconds(2)?,
         ))
         .execution_timeout(ExecutionTimeout::seconds(3)?)
-        .checked_output()
         .await?;
     server.finish().await
 }
@@ -989,7 +1237,7 @@ async fn lifecycle_admission_shares_capacity_and_retains_unsent_delete() -> Resu
         let client =
             Daytona::with_config(Credentials::ApiKey(ApiKey::new("test-secret")?), config)?;
         let worker = client.sandbox(SandboxId::new("sb-1")?);
-        let command = worker.shell(ShellScript::new("work")?).checked_output();
+        let command = worker.run(ShellScript::new("work")?);
         let cleanup = async {
             entry
                 .await
@@ -1156,7 +1404,7 @@ async fn explicit_budget_does_not_bypass_client_cap() -> Result<(), TestError> {
     )?;
     let sandbox = client.sandbox(SandboxId::new("sb-1")?);
     let result = sandbox
-        .shell(ShellScript::new("work")?)
+        .run(ShellScript::new("work")?)
         .budget(CommandBudget::new(
             ExecutionTimeout::seconds(2)?,
             RequestTimeout::seconds(3)?,
@@ -1191,9 +1439,7 @@ async fn configured_snapshot_uses_its_existing_resources() -> Result<(), TestErr
         .source(SandboxSource::Snapshot(SnapshotRef::new("snapshot-a")?))
         .validate()?;
     match client
-        .sandboxes()
-        .ephemeral_from(request)
-        .run(async |sandbox| shell(sandbox).await)
+        .scope_from(request, async |sandbox| shell(sandbox).await)
         .await
     {
         Ok(output) => require(output.text() == "hello\n", "snapshot scope completed")?,

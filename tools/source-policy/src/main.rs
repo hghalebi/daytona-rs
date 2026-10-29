@@ -59,13 +59,76 @@ impl Policy {
                 .push("error definition missing thiserror derive");
         }
     }
+    fn expansion(&mut self, stream: proc_macro2::TokenStream) {
+        use proc_macro2::{Delimiter, TokenTree};
+        let mut tokens = stream.into_iter().peekable();
+        let mut dollar = false;
+        let mut can_index = false;
+        while let Some(token) = tokens.next() {
+            match token {
+                TokenTree::Group(group) => {
+                    if group.delimiter() == Delimiter::Bracket && can_index {
+                        self.violations
+                            .push("unchecked indexing in macro expansion");
+                    }
+                    self.expansion(group.stream());
+                    if dollar && tokens.peek().is_some_and(|next| matches!(next, TokenTree::Punct(p) if matches!(p.as_char(), '*' | '+' | '?'))) {
+                        drop(tokens.next());
+                    }
+                    can_index = group.delimiter() == Delimiter::Parenthesis;
+                    dollar = false;
+                }
+                TokenTree::Punct(p) => {
+                    if matches!(p.as_char(), '+' | '-' | '*' | '/' | '%') {
+                        self.violations
+                            .push("unchecked arithmetic in macro expansion");
+                    }
+                    dollar = p.as_char() == '$';
+                    can_index = false;
+                }
+                TokenTree::Ident(_) => {
+                    can_index = true;
+                    dollar = false;
+                }
+                TokenTree::Literal(_) => {
+                    can_index = false;
+                    dollar = false;
+                }
+            }
+        }
+    }
+    fn definition(&mut self, stream: proc_macro2::TokenStream) {
+        use proc_macro2::TokenTree;
+        let tokens: Vec<_> = stream.into_iter().collect();
+        for window in tokens.windows(4) {
+            if let [
+                TokenTree::Group(_),
+                TokenTree::Punct(eq),
+                TokenTree::Punct(arrow),
+                TokenTree::Group(body),
+            ] = window
+                && eq.as_char() == '='
+                && arrow.as_char() == '>'
+            {
+                self.expansion(body.stream());
+            }
+        }
+    }
     fn tokens(&mut self, tokens: proc_macro2::TokenStream) {
+        let mut definition = false;
         for token in tokens {
             match token {
+                proc_macro2::TokenTree::Ident(id) if id == "macro_rules" => definition = true,
                 proc_macro2::TokenTree::Ident(id) if forbidden(&id.to_string()) => self
                     .violations
                     .push("forbidden identifier (including macro input)"),
-                proc_macro2::TokenTree::Group(group) => self.tokens(group.stream()),
+                proc_macro2::TokenTree::Group(group) => {
+                    if definition {
+                        self.definition(group.stream());
+                        definition = false;
+                    }
+                    self.tokens(group.stream());
+                }
                 _ => {}
             }
         }
@@ -163,7 +226,15 @@ impl<'ast> Visit<'ast> for Policy {
         if !name.as_deref().is_some_and(|s| {
             matches!(
                 s,
-                "format"
+                "macro_rules"
+                    | "compile_error"
+                    | "run"
+                    | "scope"
+                    | "ttl"
+                    | "execution_timeout"
+                    | "__run_options"
+                    | "__scope_before"
+                    | "format"
                     | "write"
                     | "writeln"
                     | "vec"
@@ -372,6 +443,12 @@ mod tests {
             "fn bad() { unreachable!(); }",
             "macro_rules! bad { () => { x.clone() }; }",
             "fn bad() { mystery!(); }",
+            "macro_rules! bad { ($value:expr) => { $value[0] }; }",
+            "macro_rules! bad { ($value:expr) => { $value + 1 }; }",
+            "fn bad() { daytona::run!(&client, script.clone()); }",
+            "fn bad() { daytona::scope!(&client, work: async |_| x.unwrap()); }",
+            "macro_rules! __run_options { () => { value.ok() }; }",
+            "macro_rules! helper { () => { inner!(x.clone()) }; }",
             "fn bad() { vec![String::new(); 5]; }",
             "#[derive(Mystery)] struct Bad;",
             "#[allow(unused_must_use)] fn bad() {}",

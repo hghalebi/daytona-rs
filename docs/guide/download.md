@@ -14,7 +14,7 @@ not depend on the sandbox from the previous lesson.
 cargo run --example download_file -- --run-live
 ```
 
-The [complete source](https://docs.rs/crate/daytona-rs/0.2.1/source/examples/download_file.rs)
+The [complete source](https://docs.rs/crate/daytona-rs/0.3.0/source/examples/download_file.rs)
 is shipped with the crate and included below.
 
 ## Complete example

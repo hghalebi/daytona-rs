@@ -113,3 +113,6 @@ pub mod long_commands {}
 #[doc = include_str!("../examples/agent_jobs.rs")]
 #[doc = "\n```\n"]
 pub mod agent_jobs {}
+
+#[doc = include_str!("../docs/guide/macros.md")]
+pub mod macros {}

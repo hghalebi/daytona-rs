@@ -248,3 +248,19 @@ fn resource_source_validation_preserves_the_complete_draft() -> Result<(), TestE
     }
     Ok(())
 }
+
+#[test]
+fn script_input_retains_invalid_text() -> Result<(), TestError> {
+    let input = ScriptInput::from(String::from(" \n"));
+    match input.validate() {
+        Ok(_) => Err(TestError::Contract("blank script accepted")),
+        Err(error) => {
+            let (input, cause) = error.into_parts();
+            require(input.text() == " \n", "original script retained")?;
+            require(
+                matches!(cause, ValidationError::InvalidText { .. }),
+                "typed cause retained",
+            )
+        }
+    }
+}

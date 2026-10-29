@@ -1,36 +1,34 @@
-## Expected result and explanation
+## Expected result
 
 ```text
 Hello from Daytona
 ```
 
-A successful return means the command reported exit code zero and scope cleanup
-was confirmed. The output can be printed after the sandbox is gone because it
-owns its text.
+The complete workflow is client.run(script).await. The SDK validates the script,
+creates a temporary sandbox, checks the command exit, and confirms deletion.
+The output owns its text and remains usable after deletion.
 
-1. `ApiKey::new` validates the credential text. The provider checks access later.
-2. `Daytona::new` owns the transport. The scope borrows the client.
-3. The script and execution timeout move into the callback once. Build them first
-   so local validation fails before creation. async move transfers these captured
-   values; its sandbox argument remains borrowed. The returned execution Result
-   tells Rust the callback error type, so no closure type annotation is needed.
-4. `checked_output().await` waits for an explicit successful exit.
-5. The scope deletes its sandbox after the callback returns, including when work fails.
-6. `write!` reports terminal failures through `?` rather than ignoring them.
+Defaults are a five-minute provider TTL, a thirty-second command limit,
+a sixty-second readiness deadline and a thirty-second cleanup deadline. The
+client HTTP cap still applies. These are separate limits, not one total deadline.
 
-Try changing the message to your name or project. The output changes; the ownership
-and cleanup flow stays the same. Do not put untrusted input directly into shell
-source. Treat shell construction as part of your application’s input boundary.
+The application supplies credentials and a Tokio runtime. The SDK does not read
+.env files or start a runtime. The example checks --run-live before credentials
+or network work. Its fallible write reports terminal errors through a typed Result.
 
-Missing `--run-live` returns a consent error before credentials or network work.
-Authentication errors require a valid key. For cleanup errors, inspect the retained
-sandbox identity; do not assume it was deleted. See [errors](crate::guide::errors).
+Try changing the greeting. Treat shell source as code: do not insert untrusted
+input without an appropriate application-level encoding strategy. The SDK does
+not add quoting, shell flags or interpolation.
 
-## Before adding cancellation
+## Failure and recovery
 
-Normal completion runs cleanup. Dropping this future, stopping the process, or
-panicking inside user work does not. This first example relies on provider TTL as
-a fallback for interruption. Save `scope.reference()` before awaiting when your
-application needs restart recovery. See [recovery](crate::guide::recovery).
+RunError distinguishes invalid input, setup, command, cleanup and combined
+failures. A cleanup error retains successful output. Inspect successful_output()
+and cleanup_error(), or match the error to take ownership of both.
 
-Next: [inspect command results](crate::guide::commands).
+Dropping the future or stopping the process does not perform asynchronous cleanup.
+A provider TTL is a fallback, not deletion evidence. For restart recovery, store
+the task in a variable, persist task.reference() with the intended environment
+and settings, and then await it. See [recovery](crate::guide::recovery).
+
+Next: [macro options](crate::guide::macros) or [command results](crate::guide::commands).

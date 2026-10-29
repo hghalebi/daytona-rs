@@ -46,3 +46,15 @@ checks positive/negative command results and a file round trip, then confirms
 scope cleanup with a separate observation. It requires `--run-live` and is never
 executed by normal tests or CI. Package inclusion is limited to source/document
 extensions; `.env` files are excluded even inside source directories.
+
+## Awaitable tasks and input boundaries
+
+Text enters through ScriptInput and becomes ShellScript before execution. Draft
+command/scope input is private and becomes a validated request before the effect
+boundary. client.run owns a temporary lifecycle; sandbox.run never creates or
+deletes a resource. Both require a successful exit by default.
+
+Macros return the same must-use builders and evaluate input expressions once in
+source order. A saved creation reference remains identical through validation.
+ScopeError<T, E> retains successful T if cleanup fails, without requiring T: Debug.
+The report conversion preserves the same evidence. There is no async Drop cleanup.

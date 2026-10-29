@@ -30,3 +30,6 @@ require explicit execution and a real key. Ordinary tests do not create resource
 Read a method’s **Errors** and **Cancellation** sections before adding retry or
 cancellation behavior. Values and types protect local contracts. Provider state,
 permissions, and resource quotas still need runtime checks.
+
+Use [short calls and macros](crate::guide::macros) for named options and the
+relationship between client tasks and commands on an existing sandbox.

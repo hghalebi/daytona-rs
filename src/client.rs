@@ -142,10 +142,7 @@ impl Daytona {
             poll: config.poll,
         })
     }
-    /// Borrows this client to prepare a create request or temporary scope.
-    pub fn sandboxes(&self) -> Sandboxes<'_> {
-        Sandboxes { client: self }
-    }
+
     /// Moves a known ID into a handle borrowing this client.
     ///
     /// This performs no lookup. Call [`Sandbox::observe`] to inspect current state.
@@ -298,33 +295,6 @@ impl SandboxControl for Daytona {
 }
 /// A borrowed entry point for creating sandbox requests and scopes.
 ///
-/// Obtained from [`Daytona::sandboxes`]. See [getting started](crate::guide::getting_started).
-pub struct Sandboxes<'client> {
-    pub(crate) client: &'client Daytona,
-}
-impl<'client> Sandboxes<'client> {
-    /// Moves a validated request into the normal scoped cleanup workflow.
-    ///
-    /// Preserves its source, policies, and exact recovery reference. No request
-    /// is sent until run or run_report is awaited. See the
-    /// [configured scope lesson](crate::guide::configured_scope).
-    pub fn ephemeral_from(&self, request: Create<Validated>) -> Ephemeral<'client, HasTtl> {
-        Ephemeral::from_request(self.client, request)
-    }
-
-    /// Starts a local draft. Set a TTL, validate it, then submit it.
-    ///
-    /// See [manual lifecycle](crate::guide::lifecycle).
-    pub fn create(&self) -> Create<Draft> {
-        Create::draft()
-    }
-    /// Starts a scope that owns its sandbox and handles normal-completion cleanup.
-    ///
-    /// Set a TTL before running work. See [getting started](crate::guide::getting_started).
-    pub fn ephemeral(&self) -> Ephemeral<'client> {
-        Ephemeral::new(self.client)
-    }
-}
 #[derive(Debug)]
 /// An owned sandbox identity with a borrowed client.
 ///

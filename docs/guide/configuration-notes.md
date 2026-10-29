@@ -26,13 +26,13 @@ Next: [run your first command](crate::guide::getting_started).
 | Readiness wait | 60 seconds in a scope | Time to observe ready |
 | Cleanup wait | 30 seconds in a scope | Delete submission and confirmation |
 | Poll interval | 250 milliseconds | Delay between observations |
-| Execution | 10 seconds sent by default | Provider command time limit |
-| Sandbox TTL | Required | Provider lifetime, in minutes |
+| Execution | 30 seconds sent by default | Provider command time limit |
+| Sandbox TTL | 5 minutes for tasks; required for manual creation | Provider lifetime, in minutes |
 
 [`ClientConfig`](crate::ClientConfig) changes HTTP limits. Scope methods change
-readiness and cleanup deadlines. [`Shell::execution_timeout`](crate::Shell::execution_timeout)
+readiness and cleanup deadlines. [`Command::execution_timeout`](crate::Command::execution_timeout)
 sets the provider limit and an explicit request timeout. Without that setting,
-the command request uses the client HTTP deadline. The outer client cap applies
+the command execution and request limits are both 30 seconds. The outer client cap applies
 even with an explicit execution timeout. The earlier deadline wins. Raising only
 the client cap does not add grace to the command request timeout. No timeout proves a process
 stopped. A TTL is a fallback, not proof of deletion.
