@@ -1,0 +1,11 @@
+allow-unwrap-in-consts = false
+allow-expect-in-consts = false
+allow-unwrap-in-tests = false
+allow-expect-in-tests = false
+allow-panic-in-tests = false
+allow-indexing-slicing-in-tests = false
+disallowed-methods = [
+  { path = "std::clone::Clone::clone", reason = "Borrow or move values" },
+  { path = "std::clone::Clone::clone_from", reason = "Borrow or move values" },
+]
+disallowed-macros = ["std::assert", "std::assert_eq", "std::assert_ne", "std::debug_assert", "std::debug_assert_eq", "std::debug_assert_ne", "std::unreachable", "std::println", "std::eprintln", "std::print", "std::eprint"]

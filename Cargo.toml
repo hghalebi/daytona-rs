@@ -1,0 +1,73 @@
+[package]
+name = "daytona-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+description = "Unofficial Daytona SDK with validated types, borrowed sandbox handles, and explicit recovery"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/hghalebi/daytona-rs"
+homepage = "https://github.com/hghalebi/daytona-rs"
+documentation = "https://docs.rs/daytona-rs/latest/daytona/"
+keywords = ["daytona", "sandbox", "sdk", "async", "typestate"]
+categories = ["api-bindings", "asynchronous"]
+publish = ["crates-io"]
+include = [
+    "/Cargo.toml",
+    "/Cargo.lock",
+    "/README.md",
+    "/CHANGELOG.md",
+    "/CONTRIBUTING.md",
+    "/SECURITY.md",
+    "/LICENSE-MIT",
+    "/LICENSE-APACHE",
+    "/clippy.toml",
+    "/rust-toolchain.toml",
+    "/src/**",
+    "/examples/**",
+    "/tests/**",
+    "/docs/**",
+]
+
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-gnu"
+targets = ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"]
+
+[lib]
+name = "daytona"
+
+[workspace]
+members = ["tools/source-policy"]
+resolver = "3"
+
+[dependencies]
+reqwest = { version = "0.13.5", default-features = false, features = ["rustls", "json", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["time", "sync", "fs", "io-util"] }
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+ipnet = "2"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "test-util"] }
+
+[lints]
+workspace = true
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+panic_in_result_fn = "deny"
+todo = "deny"
+unimplemented = "deny"
+indexing_slicing = "deny"
+string_slice = "deny"
+disallowed_methods = "deny"
+disallowed_macros = "deny"

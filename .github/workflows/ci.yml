@@ -1,0 +1,42 @@
+name: SDK contracts
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.98.0 --profile minimal --component rustfmt --component clippy
+      - name: Formatting
+        run: cargo fmt --all -- --check
+      - name: Strict Clippy (including tests and examples)
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Domain, protocol, recovery, and policy fixtures
+        run: cargo test --workspace --all-targets --locked
+      - name: Consumer compile contracts
+        run: cargo test --doc --locked
+      - name: Documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --no-deps --locked
+      - name: Install source policy executable
+        run: cargo install --path tools/source-policy --root target/policy --locked
+      - name: Check all owned Rust sources with installed executable
+        run: target/policy/bin/source-policy .
+      - name: Build the release archive
+        run: cargo package -p daytona-rs --locked
+      - name: Verify the crates.io package without uploading
+        run: cargo publish -p daytona-rs --registry crates-io --dry-run --locked
+      - name: Test the packaged SDK independently of workspace members
+        run: |
+          cargo test --manifest-path target/package/daytona-rs-0.1.0/Cargo.toml --all-targets --locked
+          cargo test --manifest-path target/package/daytona-rs-0.1.0/Cargo.toml --doc --locked
